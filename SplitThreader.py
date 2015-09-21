@@ -2,6 +2,7 @@
 
 #######################################################################################################################################
 ################################################        SplitThreader.py         ######################################################
+################################################         Maria Nattestad         ######################################################
 #######################################################################################################################################
 
 # Node has a name, attributes like chromosome, pos_start, pos_stop, and 
@@ -9,12 +10,10 @@
     # Each port has an unrestricted number of edges to other ports, owned by other nodes
     # Each port has the name of its parent node, but does not own the parent node
 
-separator = "_____________________________________________________"
-
-# Only necessary for draw function:
+# Path to Graphviz neato necessary for draw function:
 neato = "/usr/local/bin/neato" 
-import random
 
+import random
 
 class Node(object):
     def __init__(self,name,attributes = {}):
