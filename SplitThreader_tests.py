@@ -173,6 +173,30 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(  self.g.breadth_first_search(this_port,other_port,depth_limit=-1), [["A:start","B:start","C:stop"]])
         self.assertEqual(  str(this_port), "A:stop" )
 
+class TestComplicatedExampleGraph(unittest.TestCase):
+    def setUp(self):
+        self.g = Graph()
+        self.g.create_nodes(["A", "B", "C"])
+        self.g.create_edges([   (("A","start"),("B","stop")),    (("B","start"),("C","start"))   ])
+
+    def test_complex_graph_DFS(self):
+        pass
+
+class TestReadingSpansplit(unittest.TestCase):
+
+    def setUp(self):
+        self.g = Graph()
+    def test_read_spansplit(self):
+        nodes_filename = "/Users/mnattest/Desktop/SplitThreader_testcases/bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.nodes.bed"
+        edges_filename = "/Users/mnattest/Desktop/SplitThreader_testcases/bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.bedpe"
+        self.g.read_spansplit(nodes_filename,edges_filename)
+        print self.g
+        self.g.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test.dot")
+
+
+
+
+
 
 def main():
     unittest.main()

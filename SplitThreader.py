@@ -2,7 +2,6 @@
 
 #######################################################################################################################################
 ################################################        SplitThreader.py         ######################################################
-################################################         Maria Nattestad         ######################################################
 #######################################################################################################################################
 
 # Node has a name, attributes like chromosome, pos_start, pos_stop, and 
@@ -10,10 +9,13 @@
     # Each port has an unrestricted number of edges to other ports, owned by other nodes
     # Each port has the name of its parent node, but does not own the parent node
 
-# Path to Graphviz neato necessary for draw function:
-neato = "/usr/local/bin/neato" 
+separator = "_____________________________________________________"
 
+# Only necessary for draw function:
+neato = "/usr/local/bin/neato" 
 import random
+
+
 
 class Node(object):
     def __init__(self,name,attributes = {}):
@@ -152,6 +154,56 @@ class Graph(object):
             self.nodes[node1].ports[port1].edges.append(e)
             self.nodes[node2].ports[port2].edges.append(e)
 
+    def read_spansplit(self,nodes_filename,edges_filename):
+        f=open(nodes_filename)
+        # Set up chromosomes in order first
+        chromosome_locations = {}
+        for i in xrange(23):
+            chromosome_locations[str(i)] = i
+        i+=1
+        chromosome_locations["X"] = i
+        i+=1 
+        chromosome_locations["Y"] = i
+        i+=1
+        chromosome_locations["MT"] = i
+        i+=1
+
+        # now read in nodes from the file
+        node_attributes = {}
+        for line in f:
+            fields = line.strip().split()
+            y = 0
+            if fields[0] in chromosome_locations.keys(): # Add other chromosomes to the dictionary if they aren't already in there
+                y=chromosome_locations[fields[0]]
+            else:
+                chromosome_locations[fields[0]] = i
+                i += 1
+            node_name = "%s:%s" % (fields[0],fields[3])
+            node_attributes[node_name] = {"chrom":fields[0],"start":int(fields[1]),"end":int(fields[2]),"x":int(fields[1]),"y":y}
+        print node_attributes["8:20"]
+        self.create_nodes_with_attributes(node_attributes)
+
+
+
+        # read in edges from the file
+
+        counter = 0 # TESTING
+
+        f=open(edges_filename)
+        for line in f:
+            fields = line.strip().split()
+            print fields
+            
+
+
+            counter += 1        # TESTING
+            if counter > 10:    # TESTING
+                break           # TESTING
+
+
+
+
+
     def depth_first_search(self,current_port,destination_port,path_so_far=[],all_paths=[]):
         # saving the ports after jumping, so if the path contains A:start, it means you went through A in the reverse direction. A:stop means forward direction. 
 
@@ -212,16 +264,6 @@ class Graph(object):
                 else:
                     queue.append((current_port, path+[current_port]))
 
-    def bfs(graph, start, goal):
-        queue = [(start, [start])]
-        while queue:
-            (vertex, path) = queue.pop(0)
-            for next in graph[vertex] - set(path):
-                if next == goal:
-                    yield path + [next]
-                else:
-                    queue.append((next, path + [next]))
-
     def draw(self,output_filename,call_neato=True,max_linewidth=10,max_x_pixels = 600, max_y_pixels = 600):
         f=open(output_filename,'w')
         f.write("graph structs\n")
@@ -239,6 +281,8 @@ class Graph(object):
                 x_max = node.x
             if node.y > y_max:
                 y_max = node.y
+        print x_max
+        print y_max
         for node in self.nodes.values():
             # f.write('\t\tstruct' + str(counter) + '[label = "' + node.name + ' |{<f1> start |<f2> end}" shape = record fillcolor = "white" ];\n')
             f.write('\t\t' + node.name + ' [label = "' + node.name + ' |{<f1> start |<f2> end}" shape = record fillcolor = "white" pos = "' + str(float(node.x)/x_max*max_x_pixels) + "," + str(float(node.y)/y_max*max_y_pixels) + '"];\n')
