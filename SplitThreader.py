@@ -54,10 +54,12 @@ class Port(object):
     def __init__(self,name,node):
         self.name = name
         self.node = node
-        self.edges = [] # keep it a list instead of a dictionary so have can have multiple edges between the same ports
+        # self.edges = [] # keep it a list instead of a dictionary so we can have multiple edges between the same ports
+        self.edges = {}
 
     def add_edge(self,edge_instance):
-        self.edges.append(edge_instance)
+        # self.edges.append(edge_instance)
+        self.edges[edge_instance.glide(self)] = edge_instance
 
     # human-readable outputs:
     def __str__(self):
@@ -115,7 +117,7 @@ def reverse(side):
     elif side == "stop":
         return "start"
     else:
-        raise Exception("reverse only takes +, -, start, end")
+        raise Exception("reverse only takes +, -, start, stop")
 
 class Graph(object):
     FileFormatError=FileFormatError
@@ -173,8 +175,11 @@ class Graph(object):
             if len(weight_list) == len(edge_list):
                 e.weight = weight_list[i]
             self.edges.append(e)
-            self.nodes[node1].ports[port1].edges.append(e)
-            self.nodes[node2].ports[port2].edges.append(e)
+            # self.nodes[node1].ports[port1].edges.append(e)
+            # self.nodes[node2].ports[port2].edges.append(e)
+            self.nodes[node1].ports[port1].edges[self.nodes[node2].ports[port2]] = e
+            self.nodes[node2].ports[port2].edges[self.nodes[node1].ports[port1]] = e
+
 
     def create_3_edges(self,key1,key2,weight_split,weight_span1,weight_span2):
         
@@ -252,8 +257,8 @@ class Graph(object):
         e = Edge(self.nodes[node1].ports[port1], self.nodes[node2].ports[port2])
         e.weight = weight
         self.edges.append(e)
-        self.nodes[node1].ports[port1].edges.append(e)
-        self.nodes[node2].ports[port2].edges.append(e)
+        self.nodes[node1].ports[port1].edges[self.nodes[node2].ports[port2]] = e
+        self.nodes[node2].ports[port2].edges[self.nodes[node1].ports[port1]] = e
 
 
     def read_spansplit(self,nodes_filename,edges_filename):
@@ -319,13 +324,13 @@ class Graph(object):
         f.close()
 
 
-    def depth_first_search_recurse(self,current_port,destination_port,all_paths,path_so_far=[],stop_when_found = False):
+    def depth_first_search_recurse(self,current_port,destination_port,allpaths,path_so_far=[],stop_when_found = False):
         # saving the ports after jumping, so if the path contains A:start, it means you went through A in the reverse direction. A:stop means forward direction. 
 
         ############# Basic steps: ################
         # jump
         # if current_port == destination_port:
-        #     return all_paths + [path_so_far]
+        #     return allpaths + [path_so_far]
         # find edges of port
         # for edge in edges:
             # glide
@@ -337,20 +342,20 @@ class Graph(object):
         saveport = str(jumped_port)
         if str(jumped_port) == str(destination_port):
             # print "MATCH"
-            all_paths.append(path_so_far + [saveport]) # new
+            allpaths.append(path_so_far + [saveport]) # new
         else:
-            edges = jumped_port.edges
+            edges = jumped_port.edges.values()
             for edge in edges:
                 glide_port = edge.glide(jumped_port)
-                if stop_when_found and len(all_paths)>0:
+                if stop_when_found and len(allpaths)>0:
                     return
                 else: # keep recursing
-                    self.depth_first_search_recurse(glide_port, destination_port, all_paths, path_so_far+[saveport],stop_when_found=stop_when_found) # new
+                    self.depth_first_search_recurse(glide_port, destination_port, allpaths, path_so_far+[saveport],stop_when_found=stop_when_found) # new
 
     def depth_first_search(self,current_port,destination_port,stop_when_found = False):
-        all_paths = []
-        self.depth_first_search_recurse(current_port=current_port,destination_port=destination_port,all_paths=all_paths,stop_when_found=stop_when_found)
-        return all_paths
+        allpaths = []
+        self.depth_first_search_recurse(current_port=current_port,destination_port=destination_port,allpaths=allpaths,stop_when_found=stop_when_found)
+        return allpaths
 
     def breadth_first_search(self, current_port, destination_port, depth_limit = -1, stop_when_found = False):
         
@@ -384,7 +389,7 @@ class Graph(object):
             if depth_limit != -1 and len(path) > depth_limit:
                 return allpaths
             edges = port.edges
-            for edge in edges:
+            for edge in edges.values():
                 # ignore if already in path
                 # glide
                 current_port = edge.glide(port)
@@ -399,10 +404,9 @@ class Graph(object):
                 # else append to queue
                 else:
                     queue.append((current_port, path+[current_port]))
-
         return allpaths
 
-    def draw(self,output_filename,call_neato=True,max_linewidth=10,max_x_pixels = 600, max_y_pixels = 600):
+    def draw(self,output_filename, call_neato=True, use_this_path_only=[], path_weight=1, maxweight=1, max_linewidth=10, max_x_pixels=600, max_y_pixels=600, portal_name="Portal"):
         f=open(output_filename,'w')
         f.write("graph structs\n")
         f.write('{')
@@ -439,22 +443,40 @@ class Graph(object):
 
 
         #####################
-        for node in self.nodes.values():
+        for node_name in self.nodes:
+            if node_name == portal_name:
+                continue
+            node = self.nodes[node_name]
             # f.write('\t\tstruct' + str(counter) + '[label = "' + node.name + ' |{<f1> start |<f2> end}" shape = record fillcolor = "white" ];\n')
             f.write('\t\t' + node.name + ' [label = "' + node.name + ' |{<f1> start |<f2> end}" shape = record fillcolor = "white" pos = "' + str((float(node.x)-x_mins[node.y])/(x_maxes[node.y]-x_mins[node.y])*max_x_pixels) + "," + str(float(node.y)/y_max*max_y_pixels) + '"];\n')
-        
-        max_edgeweight = 0.0000001
-        for edge in self.edges:
-            if edge.weight > max_edgeweight:
-                max_edgeweight = edge.weight
 
-        for edge in self.edges:
-            print edge
-            p1 = 'f1' if edge.p1 == 'start' else 'f2'
-            p2 = 'f1' if edge.p2 == 'start' else 'f2'
-            label = edge.weight
-            linewidth = (edge.weight/max_edgeweight) * max_linewidth
-            f.write('\t' + edge.n1 + ':' + p1 + ' -- ' + edge.n2 + ":" + p2 + ' [label="' +  str(label)  + '", color="black", penwidth=' + str(float(linewidth)) + ', fontcolor=gray];\n')
+        
+        if use_this_path_only != []:   # Show only the provided path (use_this_path_only) with the given edge weight (path_weight)
+            edges_to_plot = self.edges_from_path(use_this_path_only)
+            max_edgeweight = maxweight
+
+            for edge in edges_to_plot:
+                print edge
+                p1 = 'f1' if edge.p1 == 'start' else 'f2'
+                p2 = 'f1' if edge.p2 == 'start' else 'f2'
+                label = path_weight
+                linewidth = (path_weight/max_edgeweight) * max_linewidth
+                f.write('\t' + edge.n1 + ':' + p1 + ' -- ' + edge.n2 + ":" + p2 + ' [label="' +  str(label)  + '", color="black", penwidth=' + str(float(linewidth)) + ', fontcolor=gray];\n')
+
+        else: # Show all the paths with their edge weights from the graph
+            edges_to_plot = self.edges
+            max_edgeweight = 0.0000001
+            for edge in edges_to_plot:
+                if edge.weight > max_edgeweight:
+                    max_edgeweight = edge.weight
+
+            for edge in edges_to_plot:
+                print edge
+                p1 = 'f1' if edge.p1 == 'start' else 'f2'
+                p2 = 'f1' if edge.p2 == 'start' else 'f2'
+                label = edge.weight
+                linewidth = (edge.weight/max_edgeweight) * max_linewidth
+                f.write('\t' + edge.n1 + ':' + p1 + ' -- ' + edge.n2 + ":" + p2 + ' [label="' +  str(label)  + '", color="black", penwidth=' + str(float(linewidth)) + ', fontcolor=gray];\n')
 
         f.write("}")
         f.close()
@@ -468,22 +490,16 @@ class Graph(object):
             text_to_run = "open " + output_filename + ".png"
             subprocess.call([text_to_run],shell=True)
 
-    def parsimony(self,use_breadth_first_search=False):
-        portal_name = "Portal"
-        self.add_portal(portal_name=portal_name)
-        self.find_longest_path(use_breadth_first_search=use_breadth_first_search,portal_name=portal_name)
-
     def add_portal(self,portal_name="Portal"):
         # Set up portals at the unconnected nodes
         portals = set()
         for node_name in self.nodes:
             no_start = False
             no_stop = False
-            if self.nodes[node_name].ports["start"].edges == []:
+            if len(self.nodes[node_name].ports["start"].edges.values()) == 0:
                 no_start = True
-            if self.nodes[node_name].ports["stop"].edges == []:
+            if len(self.nodes[node_name].ports["stop"].edges.values()) == 0:
                 no_stop = True
-
             if no_start and no_stop:
                 pass # Don't make a node into a portal if it has no edges
             elif no_start:
@@ -498,28 +514,46 @@ class Graph(object):
         
         # self.print_edges()
 
+    def edges_from_path(self,path):
+        second_port = self.port_from_path_item(path[0])
+        edge_list = []
+        for item in path[1:]:
+            first_port = self.opposite_port_from_path_item(item)
+            edge_list.append(second_port.edges[first_port])
+            second_port = self.port_from_path_item(item)
+        return edge_list
 
+    def port_from_path_item(self,item):
+        node,port = item.split(":")
+        return self.nodes[node].ports[port]
+    def opposite_port_from_path_item(self,item):
+        node,port = item.split(":")
+        return self.nodes[node].ports[reverse(port)]
+
+    def min_weight(self,path):
+        edge_list = self.edges_from_path(path)
+        edge_dict = {}
+        for edge in edge_list:
+            edge_dict[edge] = edge_dict.get(edge,0) + 1
+
+        minweight = -1
+        for edge in edge_dict:
+            corrected_weight = edge.weight*1.0/edge_dict[edge]
+            if minweight == -1 or corrected_weight < minweight:
+                minweight = corrected_weight
+        return minweight
         
-    def find_longest_path(self,use_breadth_first_search=False,portal_name="Portal"):
+        
+    def find_longest_path(self,use_breadth_first_search=False,portal_name="Portal",required_minimum_edge_weight=1):
         # Two methods for finding all the paths:
-
         allpaths = []
         if use_breadth_first_search:
             allpaths = self.breadth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"])
         else:
             allpaths = self.depth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"])
 
-                        # Checking that DFS and BFS produce the same results:
-
-                        # print len(bfs)
-                        # print len(dfs)
-                        # bfs_lengths = set()
-                        # for item in bfs:
-                        #     bfs_lengths.add(len(item))
-                        # dfs_lengths = set()
-                        # for item in dfs:
-                        #     dfs_lengths.add(len(item))
-                        # print bfs_lengths-dfs_lengths
+        # print allpaths
+        
         longest_uninterrupted_path_so_far = []
         longest_uninterrupted_length_so_far = 0
         
@@ -539,7 +573,7 @@ class Graph(object):
                     current_uninterrupted_length += seq_length
                 else:
                     # Save if this path is the best so far
-                    if current_uninterrupted_length > longest_uninterrupted_length_so_far:
+                    if current_uninterrupted_length > longest_uninterrupted_length_so_far and self.min_weight(path) >= required_minimum_edge_weight:
                         longest_uninterrupted_length_so_far = current_uninterrupted_length
                         longest_uninterrupted_path_so_far = path
                     # Reset chromosome and length
@@ -548,6 +582,23 @@ class Graph(object):
                 position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
         return longest_uninterrupted_path_so_far,longest_uninterrupted_length_so_far
 
+    def subtract(self,path,weight):
+        edges = self.edges_from_path(path)
+        for edge in edges:
+            edge.weight = edge.weight - weight
+
+    def parsimony(self,use_breadth_first_search=False):
+        self.add_portal()
+
+        for i in xrange(10):
+            print "------------------"
+            path,length = self.find_longest_path(use_breadth_first_search=use_breadth_first_search)
+            print path,length
+            if path == [] or length == 0:
+                break
+            minweight = self.min_weight(path)
+            # self.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test." + str(i) + ".dot", use_this_path_only=path[2:-1],path_weight=minweight,maxweight=200)
+            self.subtract(path,minweight)
 
 
 

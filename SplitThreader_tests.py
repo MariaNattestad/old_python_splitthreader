@@ -52,6 +52,9 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(len(self.g.edges),2)
         self.assertEqual(len(self.g2.edges),2)
 
+    def test_port_has_edges(self):
+        self.assertEqual(self.g.nodes["A"].ports["start"].edges[self.g.nodes["B"].ports["stop"]].glide(self.g.nodes["A"].ports["start"]),self.g.nodes["B"].ports["stop"])
+
     def test_graph_edges_have_weights(self):
         for edge in self.g.edges:
             self.assertEqual(edge.weight, 0)
@@ -60,23 +63,27 @@ class TestGraph(unittest.TestCase):
 
     def test_edge_weights_changed_everywhere(self):
         # (("A","start"),("B","stop")),
-        self.g.nodes["A"].ports["start"].edges[0].weight = 100
-        self.assertEqual(self.g.nodes["A"].ports["start"].edges[0].weight,100)
-        self.assertEqual(self.g.nodes["B"].ports["stop"].edges[0].weight,100)
+        first_port = self.g.nodes["A"].ports["start"]
+        second_port = self.g.nodes["B"].ports["stop"]
+
+
+        self.g.nodes["A"].ports["start"].edges[second_port].weight = 100
+        self.assertEqual(self.g.nodes["A"].ports["start"].edges[second_port].weight,100)
+        self.assertEqual(self.g.nodes["B"].ports["stop"].edges[first_port].weight,100)
         self.assertEqual(self.g.edges[0].weight,100)
 
     def test_glide_along_edge(self):
         # (("A","start"),("B","stop"))
         this_port = self.g.nodes["A"].ports["start"]
         other_port = self.g.nodes["B"].ports["stop"]
-        self.assertEqual(  this_port.edges[0].glide(this_port)  ,  other_port  )
-        self.assertEqual(  other_port.edges[0].glide(other_port)  ,  this_port  )
+        self.assertEqual(  this_port.edges[other_port].glide(this_port)  ,  other_port  )
+        self.assertEqual(  other_port.edges[this_port].glide(other_port)  ,  this_port  )
 
         #(("B","start"),("C","start"))
         this_port = self.g.nodes["B"].ports["start"]
         other_port = self.g.nodes["C"].ports["start"]
-        self.assertEqual(  this_port.edges[0].glide(this_port)  ,  other_port  )
-        self.assertEqual(  other_port.edges[0].glide(other_port)  ,  this_port  )
+        self.assertEqual(  this_port.edges[other_port].glide(this_port)  ,  other_port  )
+        self.assertEqual(  other_port.edges[this_port].glide(other_port)  ,  this_port  )
 
     def test_jump_across_node(self):
         this_port = self.g.nodes["A"].ports["start"]
@@ -177,6 +184,22 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(  self.g.breadth_first_search(this_port,other_port,depth_limit=-1), [["A:start","B:start","C:stop"]])
         self.assertEqual(  str(this_port), "A:stop" )
 
+    def test_subtract_edge_twice(self):
+        self.g3 = Graph()
+        self.g3.create_nodes_with_attributes({"A":{"x":0,"y":0}, "B":{"x":2,"y":0}, "C":{"x":1,"y":1}})
+        self.g3.create_edges([   (("A","start"),("B","stop"))  ,  (("B","start"),("C","start"))  ,  (("C","stop"),("C","stop"))   ], [40,100,80])
+
+        this_port = self.g3.nodes["A"].ports["stop"]
+
+        self.g3.print_edges()
+
+        allpaths = self.g3.depth_first_search(this_port,this_port)
+        path = allpaths[0]
+
+        minweight = self.g3.min_weight(path)
+        self.g3.subtract(path,minweight)
+        self.assertEqual(self.g3.min_weight(path),0)
+
 
 class TestReadingSpansplit(unittest.TestCase):
 
@@ -191,13 +214,62 @@ class TestReadingSpansplit(unittest.TestCase):
         # edges_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.bedpe"
         
         self.g.read_spansplit(nodes_filename,edges_filename)
+        # self.g.print_edges()
         
+        self.assertEqual(len(self.g.nodes),33)
+        self.assertEqual(len(self.g.edges),15)
+        
+
+        ############## Draw function ###############
         # self.g.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test.dot")
-
-        self.g.parsimony()
-
         
 
+
+class TestParsimony(unittest.TestCase):
+    def setUp(self):
+        self.g = Graph()
+        testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
+        nodes_filename = testcase_dir + "Her2.spansplit.nodes.bed"
+        edges_filename = testcase_dir + "Her2.spansplit.bedpe"
+        self.g.read_spansplit(nodes_filename,edges_filename)
+
+    def test_portal_and_that_BFS_and_DFS_agree(self):
+        portal_name="Portal"
+        self.g.add_portal(portal_name=portal_name)
+        ## Checking that DFS and BFS produce the same results:
+        dfs = self.g.depth_first_search(self.g.nodes[portal_name].ports["start"],self.g.nodes[portal_name].ports["start"])
+        bfs = self.g.breadth_first_search(self.g.nodes[portal_name].ports["start"],self.g.nodes[portal_name].ports["start"])
+        self.assertEqual(len(bfs),30)
+        self.assertEqual(len(dfs),30)
+        self.assertEqual(set(map(tuple,bfs)),set(map(tuple,dfs)))
+        
+    def test_find_longest_path(self):
+        portal_name="Portal"
+        self.g.add_portal()
+        path,length = self.g.find_longest_path()
+
+        self.assertEqual(len(path),8)
+        self.assertEqual(length,4995158)
+
+    def test_min_weight_and_subtract(self):
+        portal_name="Portal"
+        self.g.add_portal()
+        path,length = self.g.find_longest_path()
+        self.assertEqual(self.g.min_weight(path),14.0)
+
+        # Subtract 13, check new minweight is 1
+        self.g.subtract(path,13)
+        path,length = self.g.find_longest_path()
+        self.assertEqual(self.g.min_weight(path),1.0)
+
+        # Subtract the last 1, check new longest path is different
+        self.g.subtract(path,1)
+        new_path,length = self.g.find_longest_path()
+        self.assertNotEqual(set(map(tuple,path)),set(map(tuple,new_path)))
+
+
+    # def test_parsimony(self):
+        # self.g.parsimony()
 
 
 def main():
