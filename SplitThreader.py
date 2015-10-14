@@ -16,6 +16,10 @@ neato = "/usr/local/bin/neato"
 import random
 
 
+class FileFormatError(Exception):
+    pass
+
+
 
 class Node(object):
     def __init__(self,name,attributes = {}):
@@ -68,7 +72,7 @@ class Port(object):
         elif self == ports["stop"]:
             return ports["start"]
         else:
-            assert("glide(): current port not in edge")
+            assert("jump(): current port not in edge")
 
 
 class Edge(object):
@@ -101,11 +105,25 @@ class Edge(object):
         else:
             assert("glide(): current port not in edge")
 
+def reverse(side):
+    if side == "+":
+        return "-"
+    elif side == "-":
+        return "+"
+    elif side == "start":
+        return "stop"
+    elif side == "stop":
+        return "start"
+    else:
+        raise Exception("reverse only takes +, -, start, end")
 
 class Graph(object):
+    FileFormatError=FileFormatError
+
     def __init__(self):
-        self.nodes = {}
-        self.edges = []
+        self.nodes = {} # key: node_name; value: Node object
+        self.edges = [] # list of Edge objects
+        self.node_lookup = {} # key: (chrom, pos, strand) tuple; #value: node_name
 
     def __str__(self):
         return ", ".join(self.nodes.keys())
@@ -114,10 +132,10 @@ class Graph(object):
         return "Graph: [" +", ".join(self.nodes.keys()) + "]"
 
     def print_nodes(self):
-        for node in g.nodes:
-            print node, g.nodes[node].attributes
+        for node in self.nodes:
+            print node, self.nodes[node].attributes
     def print_edges(self):        
-        for edge in g.edges:
+        for edge in self.edges:
             print edge, edge.weight
 
     def create_nodes_with_attributes(self,node_attributes):
@@ -126,6 +144,10 @@ class Graph(object):
                 print "Node already exists in graph, not overwriting"
             else:
                 self.nodes[node_name] = Node(node_name,node_attributes[node_name])
+                attr = node_attributes[node_name]
+                if "chrom" in attr and "start" in attr and "stop" in attr:
+                    self.node_lookup[(attr["chrom"],attr["start"],"-")] = node_name
+                    self.node_lookup[(attr["chrom"],attr["stop"],"+")] = node_name
 
     def create_nodes(self,node_names):
         for node_name in node_names:
@@ -154,8 +176,89 @@ class Graph(object):
             self.nodes[node1].ports[port1].edges.append(e)
             self.nodes[node2].ports[port2].edges.append(e)
 
+    def create_3_edges(self,key1,key2,weight_split,weight_span1,weight_span2):
+        
+        port1 = ""
+        if key1[2] == "+":
+            port1 = "stop"
+        elif key1[2] == "-":
+            port1 = "start"
+        else:
+            raise FileFormatError("strands must be + or - in columns 9 and 10")
+
+        port2 = ""
+        if key2[2] == "+":
+            port2 = "stop"
+        elif key2[2] == "-":
+            port2 = "start"
+        else:
+            raise FileFormatError("strands must be + or - in columns 9 and 10")
+
+
+        # split
+        node1 = self.node_lookup.get(key1, "NA")
+        node2 = self.node_lookup.get(key2, "NA")
+        if node1 == "NA" or node2 == "NA":
+            print "Keys attempted"
+            print key1
+            print key2
+            print "___________________________________"
+            print "Dictionary:"
+            print self.node_lookup
+            raise FileFormatError("node in spansplit file doesn't exist in spansplit.nodes file")
+        self.create_edge(node1,port1,node2,port2,weight_split)
+
+        # print "=================================================================="
+        # print "Split:"
+        # print key1,key2
+        # print node1, port1
+        # print node2, port2
+
+        # span 1
+        rev_key1 = (key1[0],key1[1],reverse(key1[2]))
+        rev_node1 = self.node_lookup.get(rev_key1, "NA")
+        rev_port1 = reverse(port1)
+
+        # print "Span 1:"
+        # print key1, rev_key1
+        # print node1, port1
+        # print rev_node1, rev_port1
+        
+        self.create_edge(node1,port1,rev_node1,rev_port1,weight_span1)
+
+        # span 2
+        rev_key2 = (key2[0],key2[1],reverse(key2[2]))
+        rev_node2 = self.node_lookup.get(rev_key2, "NA")
+        rev_port2 = reverse(port2)
+
+        # print "Span 1:"
+        # print key2, rev_key2
+        # print node2, port2
+        # print rev_node2, rev_port2
+        
+        self.create_edge(node2,port2,rev_node2,rev_port2,weight_span2)
+
+
+
+    def create_edge(self,node1,port1,node2,port2,weight):
+        # print node1
+        # print port1
+        # print self.nodes[node1].ports[port1]
+        # print "_______________"
+        # print node2
+        # print port2
+        # print self.nodes[node2].ports[port2]
+        # print "_______________"
+        e = Edge(self.nodes[node1].ports[port1], self.nodes[node2].ports[port2])
+        e.weight = weight
+        self.edges.append(e)
+        self.nodes[node1].ports[port1].edges.append(e)
+        self.nodes[node2].ports[port2].edges.append(e)
+
+
     def read_spansplit(self,nodes_filename,edges_filename):
         f=open(nodes_filename)
+
         # Set up chromosomes in order first
         chromosome_locations = {}
         for i in xrange(23):
@@ -168,7 +271,7 @@ class Graph(object):
         chromosome_locations["MT"] = i
         i+=1
 
-        # now read in nodes from the file
+        # Read in nodes from the spansplit.nodes file
         node_attributes = {}
         for line in f:
             fields = line.strip().split()
@@ -178,33 +281,45 @@ class Graph(object):
             else:
                 chromosome_locations[fields[0]] = i
                 i += 1
-            node_name = "%s:%s" % (fields[0],fields[3])
-            node_attributes[node_name] = {"chrom":fields[0],"start":int(fields[1]),"end":int(fields[2]),"x":int(fields[1]),"y":y}
-        print node_attributes["8:20"]
+            node_name = "%s.%s" % (fields[0],fields[3])
+            node_attributes[node_name] = {"chrom":fields[0],"start":int(fields[1]),"stop":int(fields[2]),"x":int(fields[1]),"y":y}
         self.create_nodes_with_attributes(node_attributes)
 
+        f.close()
 
-
-        # read in edges from the file
-
-        counter = 0 # TESTING
+        # Read in edges from the spansplit file
+        # counter = 0 # TESTING
 
         f=open(edges_filename)
         for line in f:
             fields = line.strip().split()
-            print fields
+            # print fields
+            chrom1 = fields[0]
+            chrom2 = fields[3]
+            pos1 = int(fields[1])
+            pos2 = int(fields[4])
+            strand1 = fields[8]
+            strand2 = fields[9]
+            weight_split = float(fields[11])
+            weight_span1 = float(fields[13])
+            weight_span2 = float(fields[16])
             
 
+            key1 = (chrom1,pos1,strand1)
+            key2 = (chrom2,pos2,strand2)
 
-            counter += 1        # TESTING
-            if counter > 10:    # TESTING
-                break           # TESTING
+            # print key1
+            # print key2
+
+            self.create_3_edges(key1, key2, weight_split, weight_span1, weight_span2)
+
+            # counter += 1        # TESTING
+            # if counter > 10:    # TESTING
+            #     break           # TESTING
+        f.close()
 
 
-
-
-
-    def depth_first_search(self,current_port,destination_port,path_so_far=[],all_paths=[]):
+    def depth_first_search_recurse(self,current_port,destination_port,all_paths,path_so_far=[],stop_when_found = False):
         # saving the ports after jumping, so if the path contains A:start, it means you went through A in the reverse direction. A:stop means forward direction. 
 
         ############# Basic steps: ################
@@ -216,14 +331,26 @@ class Graph(object):
             # glide
             # recurse
         ###########################################
-        current_port = current_port.jump()
-        saveport = str(current_port)
-        if str(current_port) == str(destination_port):
-            return all_paths + [path_so_far + [saveport]]
-        edges = current_port.edges
-        for edge in edges:
-            current_port = edge.glide(current_port)
-            return self.depth_first_search(current_port,destination_port,path_so_far+[saveport],all_paths)
+        
+        jumped_port = current_port.jump()
+        
+        saveport = str(jumped_port)
+        if str(jumped_port) == str(destination_port):
+            # print "MATCH"
+            all_paths.append(path_so_far + [saveport]) # new
+        else:
+            edges = jumped_port.edges
+            for edge in edges:
+                glide_port = edge.glide(jumped_port)
+                if stop_when_found and len(all_paths)>0:
+                    return
+                else: # keep recursing
+                    self.depth_first_search_recurse(glide_port, destination_port, all_paths, path_so_far+[saveport],stop_when_found=stop_when_found) # new
+
+    def depth_first_search(self,current_port,destination_port,stop_when_found = False):
+        all_paths = []
+        self.depth_first_search_recurse(current_port=current_port,destination_port=destination_port,all_paths=all_paths,stop_when_found=stop_when_found)
+        return all_paths
 
     def breadth_first_search(self, current_port, destination_port, depth_limit = -1, stop_when_found = False):
         
@@ -240,29 +367,40 @@ class Graph(object):
                     # add it to the queue
             # let the while loop repeat to keep exploring the queue
         #############################################################
+
+        allpaths = []
+
         current_port = current_port.jump()
         # if match, then return:
         if str(current_port) == str(destination_port):
-            return [[str(destination_port)]]
+            if stop_when_found:
+                return [[str(destination_port)]]
+            else:
+                allpaths.append([str(destination_port)])
 
         queue = [(current_port,[current_port])]
         while queue:
             (port, path) = queue.pop(0)
             if depth_limit != -1 and len(path) > depth_limit:
-                return None
+                return allpaths
             edges = port.edges
             for edge in edges:
                 # ignore if already in path
                 # glide
-                current_port = edge.glide(current_port)
+                current_port = edge.glide(port)
                 # jump
                 current_port = current_port.jump()
                 # if match, then return
                 if str(current_port) == str(destination_port):
-                    return [map(str,path) + [str(destination_port)]]
+                    if stop_when_found:
+                        return [map(str,path) + [str(destination_port)]]
+                    else:
+                        allpaths.append(map(str,path) + [str(destination_port)])
                 # else append to queue
                 else:
                     queue.append((current_port, path+[current_port]))
+
+        return allpaths
 
     def draw(self,output_filename,call_neato=True,max_linewidth=10,max_x_pixels = 600, max_y_pixels = 600):
         f=open(output_filename,'w')
@@ -274,18 +412,36 @@ class Graph(object):
         f.write('\tnode [shape = "record" style = "filled"];\n')
         f.write('\tedge [label="Edge" penwidth=12 fontcolor="red"];\n')
 
-        x_max = 0.0000001
+        # x_max = 0.0000001
+        # y_max = 0.0000001
+        # for node in self.nodes.values():
+        #     if node.x > x_max:
+        #         x_max = node.x
+        #     if node.y > y_max:
+        #         y_max = node.y
+        # print x_max
+        # print y_max
+
+        #####################
+        x_maxes = {}
+        x_mins = {}
         y_max = 0.0000001
+        y_min = 9999999999999
         for node in self.nodes.values():
-            if node.x > x_max:
-                x_max = node.x
             if node.y > y_max:
                 y_max = node.y
-        print x_max
-        print y_max
+            if node.y < y_min:
+                y_min = node.y
+            if node.x > x_maxes.get(node.y,0):
+                x_maxes[node.y] = node.x
+            if node.x < x_mins.get(node.y,99999999999):
+                x_mins[node.y] = node.x
+
+
+        #####################
         for node in self.nodes.values():
             # f.write('\t\tstruct' + str(counter) + '[label = "' + node.name + ' |{<f1> start |<f2> end}" shape = record fillcolor = "white" ];\n')
-            f.write('\t\t' + node.name + ' [label = "' + node.name + ' |{<f1> start |<f2> end}" shape = record fillcolor = "white" pos = "' + str(float(node.x)/x_max*max_x_pixels) + "," + str(float(node.y)/y_max*max_y_pixels) + '"];\n')
+            f.write('\t\t' + node.name + ' [label = "' + node.name + ' |{<f1> start |<f2> end}" shape = record fillcolor = "white" pos = "' + str((float(node.x)-x_mins[node.y])/(x_maxes[node.y]-x_mins[node.y])*max_x_pixels) + "," + str(float(node.y)/y_max*max_y_pixels) + '"];\n')
         
         max_edgeweight = 0.0000001
         for edge in self.edges:
@@ -298,7 +454,7 @@ class Graph(object):
             p2 = 'f1' if edge.p2 == 'start' else 'f2'
             label = edge.weight
             linewidth = (edge.weight/max_edgeweight) * max_linewidth
-            f.write('\t' + edge.n1 + ':' + p1 + ' -- ' + edge.n2 + ":" + p2 + ' [label="' +  str(label)  + '", color="black", penwidth=' + str(float(linewidth)) + ', fontcolor=yellow];\n')
+            f.write('\t' + edge.n1 + ':' + p1 + ' -- ' + edge.n2 + ":" + p2 + ' [label="' +  str(label)  + '", color="black", penwidth=' + str(float(linewidth)) + ', fontcolor=gray];\n')
 
         f.write("}")
         f.close()
@@ -312,25 +468,85 @@ class Graph(object):
             text_to_run = "open " + output_filename + ".png"
             subprocess.call([text_to_run],shell=True)
 
+    def parsimony(self,use_breadth_first_search=False):
+        portal_name = "Portal"
+        self.add_portal(portal_name=portal_name)
+        self.find_longest_path(use_breadth_first_search=use_breadth_first_search,portal_name=portal_name)
+
+    def add_portal(self,portal_name="Portal"):
+        # Set up portals at the unconnected nodes
+        portals = set()
+        for node_name in self.nodes:
+            no_start = False
+            no_stop = False
+            if self.nodes[node_name].ports["start"].edges == []:
+                no_start = True
+            if self.nodes[node_name].ports["stop"].edges == []:
+                no_stop = True
+
+            if no_start and no_stop:
+                pass # Don't make a node into a portal if it has no edges
+            elif no_start:
+                portals.add(self.nodes[node_name].ports["start"])
+            elif no_stop:
+                portals.add(self.nodes[node_name].ports["stop"])
+
+        self.create_nodes_with_attributes({portal_name:{"chrom":"0","start":0,"stop":0,"x":0,"y":0}})
+        for dead_end_port in portals:
+            self.create_edge(dead_end_port.node.name, dead_end_port.name, portal_name, "stop", float("inf"))
+            # self.create_edge(node1,port1,node2,port2,weight):
+        
+        # self.print_edges()
 
 
+        
+    def find_longest_path(self,use_breadth_first_search=False,portal_name="Portal"):
+        # Two methods for finding all the paths:
 
+        allpaths = []
+        if use_breadth_first_search:
+            allpaths = self.breadth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"])
+        else:
+            allpaths = self.depth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"])
 
+                        # Checking that DFS and BFS produce the same results:
 
-# g = Graph()
-# g.create_nodes(["A","B","C"])
-# # g.create_nodes_with_attributes({"A":{"x":0,"y":0}, "B":{"x":2,"y":0}, "C":{"x":1,"y":1}})
-# g.create_edges([   (("A","start"),("B","stop")),    (("B","start"),("C","start"))   ])
-
-# g.print_nodes()
-
-
-# # # print g
-
-# # # g.print_edges()
-
-
-# g.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test.dot",call_neato=True)
+                        # print len(bfs)
+                        # print len(dfs)
+                        # bfs_lengths = set()
+                        # for item in bfs:
+                        #     bfs_lengths.add(len(item))
+                        # dfs_lengths = set()
+                        # for item in dfs:
+                        #     dfs_lengths.add(len(item))
+                        # print bfs_lengths-dfs_lengths
+        longest_uninterrupted_path_so_far = []
+        longest_uninterrupted_length_so_far = 0
+        
+        for path in allpaths:
+            current_uninterrupted_length = 0
+            current_chromosome = ""
+            position_where_we_left_off = 0
+            for item in path:
+                node,port = item.split(":")
+                # print "Stop:",self.nodes[node].attributes["stop"]
+                # print "Start:",self.nodes[node].attributes["start"]
+                # # Attributes: # {"chrom":fields[0],"start":int(fields[1]),"stop":int(fields[2]),"x":int(fields[1]),"y":y}
+                seq_length = self.nodes[node].attributes["stop"]-self.nodes[node].attributes["start"]
+                this_chromosome = self.nodes[node].attributes["chrom"]
+                this_position = self.nodes[node].attributes[reverse(port)] # port refers to after the jump, so we reverse that to get the entry point into this node
+                if this_chromosome == current_chromosome and this_position == position_where_we_left_off: 
+                    current_uninterrupted_length += seq_length
+                else:
+                    # Save if this path is the best so far
+                    if current_uninterrupted_length > longest_uninterrupted_length_so_far:
+                        longest_uninterrupted_length_so_far = current_uninterrupted_length
+                        longest_uninterrupted_path_so_far = path
+                    # Reset chromosome and length
+                    current_uninterrupted_length = seq_length
+                    current_chromosome = this_chromosome
+                position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
+        return longest_uninterrupted_path_so_far,longest_uninterrupted_length_so_far
 
 
 
@@ -342,12 +558,3 @@ class Graph(object):
 # g.nodes["A"].ports["start"].edges[0].weight = 0
 # print "after:",g.nodes["A"].ports["start"].edges[0].weight
 ###########################################################################################################################################################################
-
-
-
-
-
-
-
-
-

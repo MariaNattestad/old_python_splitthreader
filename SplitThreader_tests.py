@@ -89,24 +89,28 @@ class TestGraph(unittest.TestCase):
         this_port = self.g.nodes["A"].ports["stop"]
         other_port = self.g.nodes["A"].ports["start"]
         self.assertEqual(  self.g.depth_first_search(this_port,other_port),  [["A:start"]])
+        self.assertEqual(  self.g.depth_first_search(this_port,other_port,stop_when_found=True),  [["A:start"]])
         self.assertEqual(  str(this_port), "A:stop" )
         
         # travel one edge
         this_port = self.g.nodes["A"].ports["stop"]
         other_port = self.g.nodes["B"].ports["start"]
         self.assertEqual(  self.g.depth_first_search(this_port,other_port),  [["A:start","B:start"]])
+        self.assertEqual(  self.g.depth_first_search(this_port,other_port,stop_when_found=True),  [["A:start","B:start"]])
         self.assertEqual(  str(this_port), "A:stop" )
 
         # travel two edges
         this_port = self.g.nodes["A"].ports["stop"]
         other_port = self.g.nodes["C"].ports["stop"]
         self.assertEqual(  self.g.depth_first_search(this_port,other_port),  [["A:start","B:start","C:stop"]])
+        self.assertEqual(  self.g.depth_first_search(this_port,other_port,stop_when_found=True),  [["A:start","B:start","C:stop"]])
         self.assertEqual(  str(this_port), "A:stop" )
 
         # no connection
         this_port = self.g.nodes["A"].ports["stop"]
         other_port = self.g.nodes["C"].ports["start"]
-        self.assertEqual(  self.g.depth_first_search(this_port,other_port), None)
+        self.assertEqual(  self.g.depth_first_search(this_port,other_port), [])
+        self.assertEqual(  self.g.depth_first_search(this_port,other_port,stop_when_found=True), [])
         self.assertEqual(  str(this_port), "A:stop" )
 
 
@@ -132,7 +136,7 @@ class TestGraph(unittest.TestCase):
         # no connection
         this_port = self.g.nodes["A"].ports["stop"]
         other_port = self.g.nodes["C"].ports["start"]
-        self.assertEqual(  self.g.breadth_first_search(this_port,other_port), None)
+        self.assertEqual(  self.g.breadth_first_search(this_port,other_port), [])
         self.assertEqual(  str(this_port), "A:stop" )
     
     def test_breadth_first_search_depth_limit(self):
@@ -152,13 +156,13 @@ class TestGraph(unittest.TestCase):
         # travel one edge, depth limit 0: NOT found
         this_port = self.g.nodes["A"].ports["stop"]
         other_port = self.g.nodes["B"].ports["start"]
-        self.assertEqual(  self.g.breadth_first_search(this_port,other_port,depth_limit=0), None)
+        self.assertEqual(  self.g.breadth_first_search(this_port,other_port,depth_limit=0), [])
         self.assertEqual(  str(this_port), "A:stop" )
 
         # travel 2 edges, depth limit 1: NOT found
         this_port = self.g.nodes["A"].ports["stop"]
         other_port = self.g.nodes["C"].ports["stop"]
-        self.assertEqual(  self.g.breadth_first_search(this_port,other_port,depth_limit=1), None)
+        self.assertEqual(  self.g.breadth_first_search(this_port,other_port,depth_limit=1), [])
         self.assertEqual(  str(this_port), "A:stop" )
 
         # travel 2 edges, depth limit 2: FOUND
@@ -173,28 +177,26 @@ class TestGraph(unittest.TestCase):
         self.assertEqual(  self.g.breadth_first_search(this_port,other_port,depth_limit=-1), [["A:start","B:start","C:stop"]])
         self.assertEqual(  str(this_port), "A:stop" )
 
-class TestComplicatedExampleGraph(unittest.TestCase):
-    def setUp(self):
-        self.g = Graph()
-        self.g.create_nodes(["A", "B", "C"])
-        self.g.create_edges([   (("A","start"),("B","stop")),    (("B","start"),("C","start"))   ])
-
-    def test_complex_graph_DFS(self):
-        pass
 
 class TestReadingSpansplit(unittest.TestCase):
 
     def setUp(self):
         self.g = Graph()
     def test_read_spansplit(self):
-        nodes_filename = "/Users/mnattest/Desktop/SplitThreader_testcases/bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.nodes.bed"
-        edges_filename = "/Users/mnattest/Desktop/SplitThreader_testcases/bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.bedpe"
+        testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
+        nodes_filename = testcase_dir + "Her2.spansplit.nodes.bed"
+        edges_filename = testcase_dir + "Her2.spansplit.bedpe"
+        
+        # nodes_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.nodes.bed"
+        # edges_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.bedpe"
+        
         self.g.read_spansplit(nodes_filename,edges_filename)
-        print self.g
-        self.g.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test.dot")
+        
+        # self.g.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test.dot")
 
+        self.g.parsimony()
 
-
+        
 
 
 
