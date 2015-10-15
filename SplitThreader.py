@@ -14,7 +14,7 @@ separator = "_____________________________________________________"
 # Only necessary for draw function:
 neato = "/usr/local/bin/neato" 
 import random
-
+import time
 
 class FileFormatError(Exception):
     pass
@@ -544,11 +544,11 @@ class Graph(object):
         return minweight
         
         
-    def find_longest_path(self,use_breadth_first_search=False,portal_name="Portal",required_minimum_edge_weight=1):
+    def find_longest_path(self,use_breadth_first_search=True,depth_limit=50,portal_name="Portal",required_minimum_edge_weight=1):
         # Two methods for finding all the paths:
         allpaths = []
         if use_breadth_first_search:
-            allpaths = self.breadth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"])
+            allpaths = self.breadth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"],depth_limit=depth_limit)
         else:
             allpaths = self.depth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"])
 
@@ -587,18 +587,100 @@ class Graph(object):
         for edge in edges:
             edge.weight = edge.weight - weight
 
-    def parsimony(self,use_breadth_first_search=False):
+    def parsimony(self,use_breadth_first_search=True,verbose=False,depth_limit=50):
         self.add_portal()
-
-        for i in xrange(10):
-            print "------------------"
-            path,length = self.find_longest_path(use_breadth_first_search=use_breadth_first_search)
-            print path,length
+        recording = []
+        before = time.time()
+        i = 0
+        while i < 15:
+            path,length = self.find_longest_path(use_breadth_first_search=use_breadth_first_search,depth_limit=depth_limit)
             if path == [] or length == 0:
                 break
             minweight = self.min_weight(path)
+            recording.append([path,length,minweight])
+            if verbose:
+                print [path,length,minweight], time.time()-before
+                before = time.time()
+
             # self.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test." + str(i) + ".dot", use_this_path_only=path[2:-1],path_weight=minweight,maxweight=200)
             self.subtract(path,minweight)
+            i += 1
+        return recording
+
+    def find_nodename_by_position(self,point1): # point1 = ("chrom",position)
+        chrom1 = point1[0]
+        pos1 = point1[1]
+
+        matching_nodes = []
+        for node_name in self.nodes:
+            if chrom1 == self.nodes[node_name].attributes["chrom"]:
+                # if a point is on the breakpoint between nodes, assign it to the left node
+                if pos1 > self.nodes[node_name].attributes["start"] and pos1 <= self.nodes[node_name].attributes["stop"]: 
+                    matching_nodes.append(node_name)
+        if len(matching_nodes) > 1:
+            raise FileFormatError("More than one node contains the point")
+        if len(matching_nodes) == 0:
+            raise FileFormatError("No nodes match the point")
+        return matching_nodes[0]
+
+    def calculate_distance(self,point1,point2):
+        chrom1 = point1[0]
+        chrom2 = point2[0]
+        pos1 = point1[1]
+        pos2 = point2[1]
+
+        node_name1 = self.find_nodename_by_position(point1)
+        node_name2 = self.find_nodename_by_position(point2)
+        if node_name1 == node_name2:
+            if pos2 > pos1: # forward direction, return stop port as path
+                return [str(self.nodes[node_name1].ports["stop"])], abs(pos2-pos1) 
+            if pos1 > pos2: # reverse direction, return start port as path
+                return [str(self.nodes[node_name1].ports["start"])], abs(pos2-pos1) 
+        else:
+            node1 = self.nodes[node_name1]
+            node2 = self.nodes[node_name2]
+
+        
+        all_connections = []
+        all_distances = []
+        for strand1 in ["+","-"]:
+            for strand2 in ["+","-"]:
+                paths,distances = self.find_paths_by_directions(node1,node2,pos1,pos2,strand1,strand2)        
+                all_connections += paths
+                all_distances += distances
+
+        min_distance = -1
+        shortest_path = []
+        for i in xrange(len(all_distances)):
+            if all_distances[i] < min_distance or min_distance == -1:
+                min_distance = all_distances[i]
+                shortest_path = all_connections[i]
+        return shortest_path,min_distance
+
+
+    def find_paths_by_directions(self,node1,node2,pos1,pos2,strand1,strand2):
+        node1_start_port = "start" if strand1=="+" else "stop"
+        node2_end_port = "stop" if strand2=="+" else "start"
+
+        allpaths = self.breadth_first_search(node1.ports[node1_start_port], node2.ports[node2_end_port], depth_limit = -1, stop_when_found = False)
+        distances = []
+        for path in allpaths:
+            distance = 0
+            for item in path[1:-1]:
+                intermediate_node = self.port_from_path_item(item).node
+                distance += intermediate_node.attributes["stop"] - intermediate_node.attributes["start"]
+            # print "Intermediate nodes:", distance
+            # print "First node:", node1.attributes["stop"]-pos1
+            # print "Last node:", pos2 - node2.attributes["start"]
+            distance += abs(node1.attributes[reverse(node1_start_port)]-pos1)
+            distance += abs(pos2 - node2.attributes[reverse(node2_end_port)])
+            distances.append(distance)
+            
+            # print node1.attributes["stop"]
+            # total length of intermediate nodes + partial lengths of first and last nodes
+        return allpaths,distances
+
+
 
 
 

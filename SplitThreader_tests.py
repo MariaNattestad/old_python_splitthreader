@@ -191,8 +191,6 @@ class TestGraph(unittest.TestCase):
 
         this_port = self.g3.nodes["A"].ports["stop"]
 
-        self.g3.print_edges()
-
         allpaths = self.g3.depth_first_search(this_port,this_port)
         path = allpaths[0]
 
@@ -209,9 +207,6 @@ class TestReadingSpansplit(unittest.TestCase):
         testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
         nodes_filename = testcase_dir + "Her2.spansplit.nodes.bed"
         edges_filename = testcase_dir + "Her2.spansplit.bedpe"
-        
-        # nodes_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.nodes.bed"
-        # edges_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.bedpe"
         
         self.g.read_spansplit(nodes_filename,edges_filename)
         # self.g.print_edges()
@@ -268,14 +263,84 @@ class TestParsimony(unittest.TestCase):
         self.assertNotEqual(set(map(tuple,path)),set(map(tuple,new_path)))
 
 
-    # def test_parsimony(self):
-        # self.g.parsimony()
+    def test_parsimony(self):
+        self.assertEqual(len(self.g.parsimony(depth_limit=50)),11)
+
+
+class TestParsimonyGenomeWide(unittest.TestCase):
+    def test_parsimony_on_whole_genome(self):
+        self.g = Graph()
+
+        testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
+        nodes_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.nodes.bed"
+        edges_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.bedpe"
+        
+        self.g.read_spansplit(nodes_filename,edges_filename)
+
+        # print "Number of nodes:", len(self.g.nodes)
+        # print "Number of edges:", len(self.g.edges)
+
+        recordings = self.g.parsimony(use_breadth_first_search=True,verbose=False,depth_limit=10)
+        # print len(recordings)
+        # 3.7-3.8 seconds per longest path subtraction (finding all paths once), when depth_limit is 20
+        # when depth limit is 21, it takes 7.5 seconds per build
+        # That means we probably have O(2^N) complexity
+
+        # for item in recordings:
+        #     print item
+        #     print "_____________________________________________________________"
+
+class TestAnnotations(unittest.TestCase):
+    def setUp(self):
+        self.g = Graph()
+        testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
+        nodes_filename = testcase_dir + "Her2.spansplit.nodes.bed"
+        edges_filename = testcase_dir + "Her2.spansplit.bedpe"
+        self.g.read_spansplit(nodes_filename,edges_filename)
+
+    def test_calculate_distance(self):
+        point1 = ("17",37278042) # within node 17.9
+        point2 = ("17",38066674) # within node 17.9
+        self.assertEqual(self.g.find_nodename_by_position(point1),"17.9")
+        path,distance = self.g.calculate_distance(point1,point2)
+        self.assertEqual(distance,38066674-37278042) # 2 points in same node
+
+        point1 = ("17",37278042) # within node 17.9
+        point2 = ("17",38473392) # within node 17.10
+        self.assertEqual(self.g.find_nodename_by_position(point1),"17.9")
+        self.assertEqual(self.g.find_nodename_by_position(point2),"17.10")
+        path,distance = self.g.calculate_distance(point1,point2)
+        self.assertEqual(distance,38473392-37278042) # 2 points on neighboring nodes
+
+        point1 = ("17",37278042) # within node 17.9
+        point2 = ("17",39541958) # within node 17.10
+        self.assertEqual(self.g.find_nodename_by_position(point1),"17.9")
+        self.assertEqual(self.g.find_nodename_by_position(point2),"17.11")
+        path,distance = self.g.calculate_distance(point1,point2)
+        self.assertEqual(distance,39541958-37278042) # 2 points on nodes with one node in the middle
+
+        point1 = ("17",37278042) # within node 17.9
+        point2 = ("17",41401528) # end of node 17.13
+        self.assertEqual(self.g.find_nodename_by_position(point1),"17.9")
+        self.assertEqual(self.g.find_nodename_by_position(point2),"17.13")
+        path,distance = self.g.calculate_distance(point1,point2)
+        self.assertEqual(distance,41401528-37278042) # 2 points on nodes with three nodes in the middle
+
+        point1 = ("17",37278042) # within node 17.9
+        point2 = ("8",121560937) # within node 8.165
+        self.assertEqual(self.g.find_nodename_by_position(point1),"17.9")
+        self.assertEqual(self.g.find_nodename_by_position(point2),"8.165")
+        # travel along edge: 8.165:start--17.9:start 
+        path,distance = self.g.calculate_distance(point1,point2)
+        self.assertEqual(distance,11000) 
 
 
 def main():
     unittest.main()
-    
-    
+
+
+
 if __name__ == '__main__':
     main()
-    
+
+
