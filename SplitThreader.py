@@ -13,8 +13,6 @@ separator = "_____________________________________________________"
 
 # Only necessary for draw function:
 neato = "/usr/local/bin/neato" 
-import random
-import time
 
 class FileFormatError(Exception):
     pass
@@ -34,10 +32,12 @@ class Node(object):
 
     @property
     def x(self):
+        import random
         return self.attributes.get("x",random.random())
 
     @property
     def y(self):
+        import random
         return self.attributes.get("y",random.random())
 
     def add_port(self,port_name):
@@ -126,6 +126,7 @@ class Graph(object):
         self.nodes = {} # key: node_name; value: Node object
         self.edges = [] # list of Edge objects
         self.node_lookup = {} # key: (chrom, pos, strand) tuple; #value: node_name
+        self.annotation = {}
 
     def __str__(self):
         return ", ".join(self.nodes.keys())
@@ -588,6 +589,7 @@ class Graph(object):
             edge.weight = edge.weight - weight
 
     def parsimony(self,use_breadth_first_search=True,verbose=False,depth_limit=50):
+        import time
         self.add_portal()
         recording = []
         before = time.time()
@@ -623,7 +625,19 @@ class Graph(object):
             raise FileFormatError("No nodes match the point")
         return matching_nodes[0]
 
-    def calculate_distance(self,point1,point2):
+    def find_nodenames_by_gene(self,gene_name):
+        error_message = "Gene not in annotation"
+        annot = self.annotation.get(gene_name,error_message)
+        if annot == error_message:
+            return None
+        node_name_start = self.find_nodename_by_position((annot["chrom"],annot["start"]))
+        node_name_stop = self.find_nodename_by_position((annot["chrom"],annot["stop"]))
+        if node_name_start != node_name_stop:
+            return [node_name_start,node_name_stop]
+        else:
+            return [node_name_start]
+
+    def calculate_distance(self,point1,point2,depth_limit=5):
         chrom1 = point1[0]
         chrom2 = point2[0]
         pos1 = point1[1]
@@ -643,9 +657,10 @@ class Graph(object):
         
         all_connections = []
         all_distances = []
+        
         for strand1 in ["+","-"]:
             for strand2 in ["+","-"]:
-                paths,distances = self.find_paths_by_directions(node1,node2,pos1,pos2,strand1,strand2)        
+                paths,distances = self.find_paths_by_directions(node1,node2,pos1,pos2,strand1,strand2,depth_limit=depth_limit)        
                 all_connections += paths
                 all_distances += distances
 
@@ -658,11 +673,11 @@ class Graph(object):
         return shortest_path,min_distance
 
 
-    def find_paths_by_directions(self,node1,node2,pos1,pos2,strand1,strand2):
+    def find_paths_by_directions(self,node1,node2,pos1,pos2,strand1,strand2,depth_limit=5):
         node1_start_port = "start" if strand1=="+" else "stop"
         node2_end_port = "stop" if strand2=="+" else "start"
 
-        allpaths = self.breadth_first_search(node1.ports[node1_start_port], node2.ports[node2_end_port], depth_limit = -1, stop_when_found = False)
+        allpaths = self.breadth_first_search(node1.ports[node1_start_port], node2.ports[node2_end_port], depth_limit = depth_limit, stop_when_found = False)
         distances = []
         for path in allpaths:
             distance = 0
@@ -681,6 +696,139 @@ class Graph(object):
         return allpaths,distances
 
 
+    def read_annotation(self,annotation_file,remove_chr=True,name_field=4,strand_field=6):
+        f = open(annotation_file)
+        # c = 0
+        for line in f:
+            fields = line.strip().split()
+            chrom = fields[0]
+            if remove_chr:
+                chrom = chrom.split("chr")[1]
+            start = float(fields[1])
+            stop = float(fields[2])
+            name = fields[name_field-1]
+            strand = fields[strand_field-1]
+            self.annotation[name] = {"chrom":chrom,"start":start,"stop":stop,"strand":strand}
+            # c+=1
+            # if c > 1000:
+            #     break
+        f.close()
+
+    def gene_fusion_distance(self,gene_name1,gene_name2,depth_limit=5,verbose=False):
+        annot1 = self.annotation.get(gene_name1)
+        annot2 = self.annotation.get(gene_name2)
+        
+        reports = []
+        for gene_end1 in ["start","stop"]:
+            pos1 = annot1[gene_end1]
+            node_name1 = self.find_nodename_by_position((annot1["chrom"],pos1))
+            node1 = self.nodes[node_name1]
+            if verbose:
+                print "1:",node1
+                
+            for gene_end2 in ["start","stop"]:
+                pos2 = annot2[gene_end2]
+                node_name2 = self.find_nodename_by_position((annot2["chrom"],pos2))
+                node2 = self.nodes[node_name2]
+                if verbose:
+                    print "2:",node2
+                for strand1 in ["+","-"]:
+                    for strand2 in ["+","-"]:
+                        paths,distances = self.find_paths_by_directions(node1,node2,pos1,pos2,strand1,strand2,depth_limit=depth_limit)  
+                        if len(paths)>0:
+                            direction_gene1 = "Forward"
+                            if (annot1["strand"] == "-" and gene_end1 == "stop") or (annot1["strand"]=="+" and gene_end1 == "start"):
+                                # print "Forward through", gene_name1
+                                pass
+                            else:
+                                # print "Reverse through", gene_name1
+                                direction_gene1 = "Reverse"
+                            direction_gene2 = "Forward"
+                            if (annot2["strand"] == "-" and gene_end2 == "start") or (annot2["strand"]=="+" and gene_end2 == "stop"):
+                                # print "Forward through",gene_name2
+                                pass
+                            else:
+                                # print "Reverse through",gene_name2
+                                direction_gene2 = "Reverse"
+                            # min_distance = distances[0]
+                            # path = paths[0]
+                            # if len(distances) > 1:
+                            #     for i in xrange(len(distances)):
+                            #         if distances[i] < min_distance:
+                            #             min_distance = distances[i]
+                            #             path = paths[i]
+                            for i in xrange(len(distances)):
+                                reports.append({"Gene1_direction":direction_gene1, "Gene2_direction":direction_gene2, "path":paths[i],"distance":distances[i]})
+        return reports
+
+    def count_splits_in_path(self,path):
+        num_splits = -1
+
+        current_chromosome = ""
+        position_where_we_left_off = 0
+        for item in path:
+            node,port = item.split(":")
+            this_chromosome = self.nodes[node].attributes["chrom"]
+            this_position = self.nodes[node].attributes[reverse(port)] # port refers to after the jump, so we reverse that to get the entry point into this node
+            if this_chromosome == current_chromosome and this_position == position_where_we_left_off: 
+                pass # reference spanning, not a split
+            else:
+                num_splits += 1
+                current_chromosome = this_chromosome
+            position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
+        return num_splits
+
+    def gene_fusion_report(self,gene_name1,gene_name2,depth_limit=7,verbose = False):
+        if verbose:
+            print gene_name1,"-",gene_name2
+        # print gene_name1, self.annotation.get(gene_name1)
+        # print gene_name2, self.annotation.get(gene_name2)
+        reports = self.gene_fusion_distance(gene_name1,gene_name2,depth_limit=depth_limit,verbose=False)
+
+        if len(reports) == 0:
+            if verbose:
+                print "No gene fusion detected"
+        # elif len(reports) == 1:
+        #     report = reports[0]
+        #     print report["Gene1_direction"],"-",report["Gene2_direction"]
+        #     # print gene_name1,report["Gene1_direction"]
+        #     # print gene_name2,report["Gene2_direction"]
+        #     print report["distance"]/1000., "kb"
+        #     print len(report["path"])-1, "translocations"
+        #     print report["path"]
+            return None
+        else:
+            if verbose:
+                print len(reports), "gene fusion(s) detected"
+            scores = []
+            for report in reports:
+                score = 0
+                num_splits = self.count_splits_in_path(report["path"])
+                if report["Gene1_direction"] == "Forward" and report["Gene2_direction"] == "Forward":
+                    score += 50
+                if num_splits == 1:
+                    score += 100
+                elif num_splits == 2:
+                    score += 50
+                if report["distance"] < 100000:
+                    score += 10
+                elif report["distance"] < 1000000:
+                    score += 5
+                scores.append(score)
+            import numpy as np
+            scores = np.array(scores)
+            indices = np.argsort(scores)[::-1]
+            to_return = None
+            for index in indices:
+                if scores[index] == max(scores):
+                    report = reports[index]
+                    if verbose:
+                        print scores[index], report["Gene1_direction"],"-",report["Gene2_direction"],"|", report["distance"]/1000., "kb","|", self.count_splits_in_path(report["path"]), "translocation(s)", report["path"]
+                    to_return = report
+       
+            if verbose:
+                print '__________________________'
+            return to_return
 
 
 

@@ -296,6 +296,9 @@ class TestAnnotations(unittest.TestCase):
         testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
         nodes_filename = testcase_dir + "Her2.spansplit.nodes.bed"
         edges_filename = testcase_dir + "Her2.spansplit.bedpe"
+        nodes_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.nodes.bed"
+        edges_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.bedpe"
+        
         self.g.read_spansplit(nodes_filename,edges_filename)
 
     def test_calculate_distance(self):
@@ -316,7 +319,7 @@ class TestAnnotations(unittest.TestCase):
         point2 = ("17",39541958) # within node 17.10
         self.assertEqual(self.g.find_nodename_by_position(point1),"17.9")
         self.assertEqual(self.g.find_nodename_by_position(point2),"17.11")
-        path,distance = self.g.calculate_distance(point1,point2)
+        path,distance = self.g.calculate_distance(point1,point2,depth_limit=3) # with whole genome there is now a shortcut, so set the depth_limit to 3 
         self.assertEqual(distance,39541958-37278042) # 2 points on nodes with one node in the middle
 
         point1 = ("17",37278042) # within node 17.9
@@ -332,8 +335,56 @@ class TestAnnotations(unittest.TestCase):
         self.assertEqual(self.g.find_nodename_by_position(point2),"8.165")
         # travel along edge: 8.165:start--17.9:start 
         path,distance = self.g.calculate_distance(point1,point2)
-        self.assertEqual(distance,11000) 
+        self.assertEqual(distance,11000)
 
+    def test_read_annotation(self):
+        testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
+        annot_filename = testcase_dir + "gencode.v19.annotation.gtf.genes.bed"
+        self.g.read_annotation(annot_filename,name_field=8)
+        self.assertEqual(len(self.g.annotation),55765)
+        
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("CYTH1","EIF3H")["path"]),2)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("TATDN1","GSDMB")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("SUMF1","LRRFIP2")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("SUMF1","LRRFIP2")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("PHF20","RP4-723E3.1")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("RARA","PKIA")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("MTBP","SAMD12")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("CYTH1","MTBP")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("TOX2","STAU1")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("LINC00536","PVT1")["path"]),1)
+        
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("SNTB1","KLHDC2")["path"]),2) # Maybe only in Lumpy calls
+
+        # self.g.gene_fusion_report("CYTH1","EIF3H") # good
+        # self.g.gene_fusion_report("TATDN1","GSDMB") # good
+        # self.g.gene_fusion_report("SUMF1","LRRFIP2") # good
+        # self.g.gene_fusion_report("TAF2","COLEC10") # good
+        # self.g.gene_fusion_report("TRIO","FBXL7") # good
+        # self.g.gene_fusion_report("ATAD5","TLK2") # good
+        # self.g.gene_fusion_report("DHX35","ITCH") # good
+        # self.g.gene_fusion_report("RARA","PKIA") # good
+        # self.g.gene_fusion_report("PHF20","RP4-723E3.1") # good
+
+        # These go through multiple spanning edges but still have only 1 real split, so I implemented the count_splits_in_path() function to show that they have only 1 translocation
+        # self.g.gene_fusion_report("MTBP","SAMD12") # good
+        # self.g.gene_fusion_report("LINC00536","PVT1") # good
+        # self.g.gene_fusion_report("TBC1D31","ZNF704") # good
+        # self.g.gene_fusion_report("TOX2","STAU1") # good
+        # self.g.gene_fusion_report("CYTH1","MTBP") # good
+        # self.g.gene_fusion_report("SAMD12","EXT1") # good # Forward-Reverse
+
+        ###########################
+        # self.g.gene_fusion_report("PREX1","PHF20") # DNA can link up in two different ways. Which one is right can be seen from IsoSeq to see which ends of the genes are transcribed in the fusion. 
+        # PHF20-PREX1 with 2 splits (Beginning of PHF20 into beginning of PREX1)
+        # PREX1-PHF20 with 1 split (End of PREX1 into end of PHF20)
+        ###########################
+
+        # Should appear with Sniffles but not with Lumpy:
+        # self.g.gene_fusion_report("AMZ2","CASC8") 
+
+        # # Putative gene fusion through 2 translocations, possibly novel
+        # self.g.gene_fusion_report("SNTB1","KLHDC2") # YAY
 
 def main():
     unittest.main()
