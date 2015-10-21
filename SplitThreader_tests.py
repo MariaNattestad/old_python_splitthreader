@@ -217,78 +217,7 @@ class TestReadingSpansplit(unittest.TestCase):
 
         ############## Draw function ###############
         # self.g.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test.dot")
-        
 
-
-class TestParsimony(unittest.TestCase):
-    def setUp(self):
-        self.g = Graph()
-        testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
-        nodes_filename = testcase_dir + "Her2.spansplit.nodes.bed"
-        edges_filename = testcase_dir + "Her2.spansplit.bedpe"
-        self.g.read_spansplit(nodes_filename,edges_filename)
-
-    def test_portal_and_that_BFS_and_DFS_agree(self):
-        portal_name="Portal"
-        self.g.add_portal(portal_name=portal_name)
-        ## Checking that DFS and BFS produce the same results:
-        dfs = self.g.depth_first_search(self.g.nodes[portal_name].ports["start"],self.g.nodes[portal_name].ports["start"])
-        bfs = self.g.breadth_first_search(self.g.nodes[portal_name].ports["start"],self.g.nodes[portal_name].ports["start"])
-        self.assertEqual(len(bfs),30)
-        self.assertEqual(len(dfs),30)
-        self.assertEqual(set(map(tuple,bfs)),set(map(tuple,dfs)))
-        
-    def test_find_longest_path(self):
-        portal_name="Portal"
-        self.g.add_portal()
-        path,length = self.g.find_longest_path()
-
-        self.assertEqual(len(path),8)
-        self.assertEqual(length,4995158)
-
-    def test_min_weight_and_subtract(self):
-        portal_name="Portal"
-        self.g.add_portal()
-        path,length = self.g.find_longest_path()
-        self.assertEqual(self.g.min_weight(path),14.0)
-
-        # Subtract 13, check new minweight is 1
-        self.g.subtract(path,13)
-        path,length = self.g.find_longest_path()
-        self.assertEqual(self.g.min_weight(path),1.0)
-
-        # Subtract the last 1, check new longest path is different
-        self.g.subtract(path,1)
-        new_path,length = self.g.find_longest_path()
-        self.assertNotEqual(set(map(tuple,path)),set(map(tuple,new_path)))
-
-
-    def test_parsimony(self):
-        self.assertEqual(len(self.g.parsimony(depth_limit=50)),11)
-
-
-class TestParsimonyGenomeWide(unittest.TestCase):
-    def test_parsimony_on_whole_genome(self):
-        self.g = Graph()
-
-        testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
-        nodes_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.nodes.bed"
-        edges_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.bedpe"
-        
-        self.g.read_spansplit(nodes_filename,edges_filename)
-
-        # print "Number of nodes:", len(self.g.nodes)
-        # print "Number of edges:", len(self.g.edges)
-
-        recordings = self.g.parsimony(use_breadth_first_search=True,verbose=False,depth_limit=10)
-        # print len(recordings)
-        # 3.7-3.8 seconds per longest path subtraction (finding all paths once), when depth_limit is 20
-        # when depth limit is 21, it takes 7.5 seconds per build
-        # That means we probably have O(2^N) complexity
-
-        # for item in recordings:
-        #     print item
-        #     print "_____________________________________________________________"
 
 class TestAnnotations(unittest.TestCase):
     def setUp(self):
@@ -353,26 +282,26 @@ class TestAnnotations(unittest.TestCase):
         self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("CYTH1","MTBP")["path"]),1)
         self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("TOX2","STAU1")["path"]),1)
         self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("LINC00536","PVT1")["path"]),1)
-        
+
         self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("SNTB1","KLHDC2")["path"]),2) # Maybe only in Lumpy calls
 
-        # self.g.gene_fusion_report("CYTH1","EIF3H") # good
-        # self.g.gene_fusion_report("TATDN1","GSDMB") # good
-        # self.g.gene_fusion_report("SUMF1","LRRFIP2") # good
-        # self.g.gene_fusion_report("TAF2","COLEC10") # good
-        # self.g.gene_fusion_report("TRIO","FBXL7") # good
-        # self.g.gene_fusion_report("ATAD5","TLK2") # good
-        # self.g.gene_fusion_report("DHX35","ITCH") # good
-        # self.g.gene_fusion_report("RARA","PKIA") # good
-        # self.g.gene_fusion_report("PHF20","RP4-723E3.1") # good
+        # self.g.gene_fusion_report("CYTH1","EIF3H",verbose=True) # good
+        # self.g.gene_fusion_report("TATDN1","GSDMB",verbose=True) # good
+        # self.g.gene_fusion_report("SUMF1","LRRFIP2",verbose=True) # good
+        # self.g.gene_fusion_report("TAF2","COLEC10",verbose=True) # good
+        # self.g.gene_fusion_report("TRIO","FBXL7",verbose=True) # good
+        # self.g.gene_fusion_report("ATAD5","TLK2",verbose=True) # good
+        # self.g.gene_fusion_report("DHX35","ITCH",verbose=True) # good
+        # self.g.gene_fusion_report("RARA","PKIA",verbose=True) # good
+        # self.g.gene_fusion_report("PHF20","RP4-723E3.1",verbose=True) # good
 
         # These go through multiple spanning edges but still have only 1 real split, so I implemented the count_splits_in_path() function to show that they have only 1 translocation
-        # self.g.gene_fusion_report("MTBP","SAMD12") # good
-        # self.g.gene_fusion_report("LINC00536","PVT1") # good
-        # self.g.gene_fusion_report("TBC1D31","ZNF704") # good
-        # self.g.gene_fusion_report("TOX2","STAU1") # good
-        # self.g.gene_fusion_report("CYTH1","MTBP") # good
-        # self.g.gene_fusion_report("SAMD12","EXT1") # good # Forward-Reverse
+        # self.g.gene_fusion_report("MTBP","SAMD12",verbose=True) # good
+        # self.g.gene_fusion_report("LINC00536","PVT1",verbose=True) # good
+        # self.g.gene_fusion_report("TBC1D31","ZNF704",verbose=True) # good
+        # self.g.gene_fusion_report("TOX2","STAU1",verbose=True) # good
+        # self.g.gene_fusion_report("CYTH1","MTBP",verbose=True) # good
+        # self.g.gene_fusion_report("SAMD12","EXT1",verbose=True) # good # Forward-Reverse
 
         ###########################
         # self.g.gene_fusion_report("PREX1","PHF20") # DNA can link up in two different ways. Which one is right can be seen from IsoSeq to see which ends of the genes are transcribed in the fusion. 
@@ -385,6 +314,98 @@ class TestAnnotations(unittest.TestCase):
 
         # # Putative gene fusion through 2 translocations, possibly novel
         # self.g.gene_fusion_report("SNTB1","KLHDC2") # YAY
+
+
+
+class TestParsimony(unittest.TestCase):
+    def setUp(self):
+        self.g = Graph()
+        testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
+        nodes_filename = testcase_dir + "Her2.spansplit.nodes.bed"
+        edges_filename = testcase_dir + "Her2.spansplit.bedpe"
+        self.g.read_spansplit(nodes_filename,edges_filename)
+
+    def test_portal_and_that_BFS_and_DFS_agree(self):
+        portal_name="Portal"
+        self.g.add_portal(portal_name=portal_name)
+        ## Checking that DFS and BFS produce the same results:
+        dfs = self.g.depth_first_search(self.g.nodes[portal_name].ports["start"],self.g.nodes[portal_name].ports["start"])
+        bfs = self.g.breadth_first_search(self.g.nodes[portal_name].ports["start"],self.g.nodes[portal_name].ports["start"])
+        self.assertEqual(len(bfs),30)
+        self.assertEqual(len(dfs),30)
+        self.assertEqual(set(map(tuple,bfs)),set(map(tuple,dfs)))
+        
+    def test_find_longest_path(self):
+        portal_name="Portal"
+        self.g.add_portal()
+        path,length = self.g.find_longest_path()
+
+        self.assertEqual(len(path),8)
+        self.assertEqual(length,4995158)
+
+    def test_min_weight_and_subtract(self):
+        portal_name="Portal"
+        self.g.add_portal()
+        path,length = self.g.find_longest_path()
+        self.assertEqual(self.g.min_weight(path),14.0)
+
+        # Subtract 13, check new minweight is 1
+        self.g.subtract(path,13)
+        path,length = self.g.find_longest_path()
+        self.assertEqual(self.g.min_weight(path),1.0)
+
+        # Subtract the last 1, check new longest path is different
+        self.g.subtract(path,1)
+        new_path,length = self.g.find_longest_path()
+        self.assertNotEqual(set(map(tuple,path)),set(map(tuple,new_path)))
+
+
+    def test_parsimony(self):
+        self.assertEqual(len(self.g.parsimony(depth_limit=50)),11)
+
+
+class TestParsimonyGenomeWide(unittest.TestCase):
+    def test_parsimony_on_whole_genome(self):
+        self.g = Graph()
+
+        testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
+        nodes_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.nodes.bed"
+        edges_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.bedpe"
+        
+        self.g.read_spansplit(nodes_filename,edges_filename)
+
+        # print "Number of nodes:", len(self.g.nodes)
+        # print "Number of edges:", len(self.g.edges)
+
+
+        recordings = self.g.parsimony_2()
+        print "Number of co-existing paths identified:", len(recordings)
+        
+        self.g.karyotype_from_parsimony(recordings, output_filename = "/Users/mnattest/Desktop/SplitThreader_testcases/Lumpy_SplitThreader")
+
+
+        # recordings = self.g.parsimony(use_breadth_first_search=True,verbose=False,depth_limit=10)
+        
+        # self.g.karyotype_from_parsimony(recordings, output_filename = "/Users/mnattest/Desktop/SplitThreader_testcases/Lumpy_SplitThreader")
+
+        # print len(recordings)
+        # 3.7-3.8 seconds per longest path subtraction (finding all paths once), when depth_limit is 20
+        # when depth limit is 21, it takes 7.5 seconds per build
+        # That means we probably have O(2^N) complexity
+
+        # for item in recordings:
+        #     print item
+        #     print "_____________________________________________________________"
+
+
+    def test_cycle_limit_in_DFS(self):
+        self.g3 = Graph()
+        self.g3.create_nodes_with_attributes({    "A":{"x":0,"y":0},  "B":{"x":1,"y":0},  "C":{"x":1,"y":1},   "D":{"x":2,"y":0}    })
+        self.g3.create_edges([   (("A","stop"),("B","start"))  ,  (("B","stop"),("C","stop"))  ,  (("C","start"),("B","start"))  ,  (("B","stop"),("D","start"))   ], [20,40,40,20])
+        # self.g3.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test_cycles.dot")
+        allpaths = self.g3.depth_first_search(self.g3.nodes["A"].ports["start"],self.g3.nodes["D"].ports["stop"],cycle_limit=2)
+        self.assertEqual(len(allpaths),3)
+
 
 def main():
     unittest.main()

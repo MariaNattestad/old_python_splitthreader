@@ -325,88 +325,6 @@ class Graph(object):
         f.close()
 
 
-    def depth_first_search_recurse(self,current_port,destination_port,allpaths,path_so_far=[],stop_when_found = False):
-        # saving the ports after jumping, so if the path contains A:start, it means you went through A in the reverse direction. A:stop means forward direction. 
-
-        ############# Basic steps: ################
-        # jump
-        # if current_port == destination_port:
-        #     return allpaths + [path_so_far]
-        # find edges of port
-        # for edge in edges:
-            # glide
-            # recurse
-        ###########################################
-        
-        jumped_port = current_port.jump()
-        
-        saveport = str(jumped_port)
-        if str(jumped_port) == str(destination_port):
-            # print "MATCH"
-            allpaths.append(path_so_far + [saveport]) # new
-        else:
-            edges = jumped_port.edges.values()
-            for edge in edges:
-                glide_port = edge.glide(jumped_port)
-                if stop_when_found and len(allpaths)>0:
-                    return
-                else: # keep recursing
-                    self.depth_first_search_recurse(glide_port, destination_port, allpaths, path_so_far+[saveport],stop_when_found=stop_when_found) # new
-
-    def depth_first_search(self,current_port,destination_port,stop_when_found = False):
-        allpaths = []
-        self.depth_first_search_recurse(current_port=current_port,destination_port=destination_port,allpaths=allpaths,stop_when_found=stop_when_found)
-        return allpaths
-
-    def breadth_first_search(self, current_port, destination_port, depth_limit = -1, stop_when_found = False):
-        
-        ###############  Basic steps:  #####################################
-        # jump
-        # make queue with current_port in it
-        # while something is in the queue:
-            # find all edges of current_port
-                # glide
-                # jump
-                # if this new port matches
-                    # return
-                # else 
-                    # add it to the queue
-            # let the while loop repeat to keep exploring the queue
-        #############################################################
-
-        allpaths = []
-
-        current_port = current_port.jump()
-        # if match, then return:
-        if str(current_port) == str(destination_port):
-            if stop_when_found:
-                return [[str(destination_port)]]
-            else:
-                allpaths.append([str(destination_port)])
-
-        queue = [(current_port,[current_port])]
-        while queue:
-            (port, path) = queue.pop(0)
-            if depth_limit != -1 and len(path) > depth_limit:
-                return allpaths
-            edges = port.edges
-            for edge in edges.values():
-                # ignore if already in path
-                # glide
-                current_port = edge.glide(port)
-                # jump
-                current_port = current_port.jump()
-                # if match, then return
-                if str(current_port) == str(destination_port):
-                    if stop_when_found:
-                        return [map(str,path) + [str(destination_port)]]
-                    else:
-                        allpaths.append(map(str,path) + [str(destination_port)])
-                # else append to queue
-                else:
-                    queue.append((current_port, path+[current_port]))
-        return allpaths
-
     def draw(self,output_filename, call_neato=True, use_this_path_only=[], path_weight=1, maxweight=1, max_linewidth=10, max_x_pixels=600, max_y_pixels=600, portal_name="Portal"):
         f=open(output_filename,'w')
         f.write("graph structs\n")
@@ -437,11 +355,10 @@ class Graph(object):
                 y_max = node.y
             if node.y < y_min:
                 y_min = node.y
-            if node.x > x_maxes.get(node.y,0):
+            if node.x > x_maxes.get(node.y,0.00000001):
                 x_maxes[node.y] = node.x
             if node.x < x_mins.get(node.y,99999999999):
                 x_mins[node.y] = node.x
-
 
         #####################
         for node_name in self.nodes:
@@ -449,6 +366,10 @@ class Graph(object):
                 continue
             node = self.nodes[node_name]
             # f.write('\t\tstruct' + str(counter) + '[label = "' + node.name + ' |{<f1> start |<f2> end}" shape = record fillcolor = "white" ];\n')
+            
+            if x_maxes[node.y]==x_mins[node.y]:
+                x_maxes[node.y] = x_mins[node.y]+1
+            
             f.write('\t\t' + node.name + ' [label = "' + node.name + ' |{<f1> start |<f2> end}" shape = record fillcolor = "white" pos = "' + str((float(node.x)-x_mins[node.y])/(x_maxes[node.y]-x_mins[node.y])*max_x_pixels) + "," + str(float(node.y)/y_max*max_y_pixels) + '"];\n')
 
         
@@ -476,7 +397,7 @@ class Graph(object):
                 p1 = 'f1' if edge.p1 == 'start' else 'f2'
                 p2 = 'f1' if edge.p2 == 'start' else 'f2'
                 label = edge.weight
-                linewidth = (edge.weight/max_edgeweight) * max_linewidth
+                linewidth = (edge.weight*1.0/max_edgeweight) * max_linewidth
                 f.write('\t' + edge.n1 + ':' + p1 + ' -- ' + edge.n2 + ":" + p2 + ' [label="' +  str(label)  + '", color="black", penwidth=' + str(float(linewidth)) + ', fontcolor=gray];\n')
 
         f.write("}")
@@ -544,70 +465,6 @@ class Graph(object):
                 minweight = corrected_weight
         return minweight
         
-        
-    def find_longest_path(self,use_breadth_first_search=True,depth_limit=50,portal_name="Portal",required_minimum_edge_weight=1):
-        # Two methods for finding all the paths:
-        allpaths = []
-        if use_breadth_first_search:
-            allpaths = self.breadth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"],depth_limit=depth_limit)
-        else:
-            allpaths = self.depth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"])
-
-        # print allpaths
-        
-        longest_uninterrupted_path_so_far = []
-        longest_uninterrupted_length_so_far = 0
-        
-        for path in allpaths:
-            current_uninterrupted_length = 0
-            current_chromosome = ""
-            position_where_we_left_off = 0
-            for item in path:
-                node,port = item.split(":")
-                # print "Stop:",self.nodes[node].attributes["stop"]
-                # print "Start:",self.nodes[node].attributes["start"]
-                # # Attributes: # {"chrom":fields[0],"start":int(fields[1]),"stop":int(fields[2]),"x":int(fields[1]),"y":y}
-                seq_length = self.nodes[node].attributes["stop"]-self.nodes[node].attributes["start"]
-                this_chromosome = self.nodes[node].attributes["chrom"]
-                this_position = self.nodes[node].attributes[reverse(port)] # port refers to after the jump, so we reverse that to get the entry point into this node
-                if this_chromosome == current_chromosome and this_position == position_where_we_left_off: 
-                    current_uninterrupted_length += seq_length
-                else:
-                    # Save if this path is the best so far
-                    if current_uninterrupted_length > longest_uninterrupted_length_so_far and self.min_weight(path) >= required_minimum_edge_weight:
-                        longest_uninterrupted_length_so_far = current_uninterrupted_length
-                        longest_uninterrupted_path_so_far = path
-                    # Reset chromosome and length
-                    current_uninterrupted_length = seq_length
-                    current_chromosome = this_chromosome
-                position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
-        return longest_uninterrupted_path_so_far,longest_uninterrupted_length_so_far
-
-    def subtract(self,path,weight):
-        edges = self.edges_from_path(path)
-        for edge in edges:
-            edge.weight = edge.weight - weight
-
-    def parsimony(self,use_breadth_first_search=True,verbose=False,depth_limit=50):
-        import time
-        self.add_portal()
-        recording = []
-        before = time.time()
-        i = 0
-        while i < 15:
-            path,length = self.find_longest_path(use_breadth_first_search=use_breadth_first_search,depth_limit=depth_limit)
-            if path == [] or length == 0:
-                break
-            minweight = self.min_weight(path)
-            recording.append([path,length,minweight])
-            if verbose:
-                print [path,length,minweight], time.time()-before
-                before = time.time()
-
-            # self.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test." + str(i) + ".dot", use_this_path_only=path[2:-1],path_weight=minweight,maxweight=200)
-            self.subtract(path,minweight)
-            i += 1
-        return recording
 
     def find_nodename_by_position(self,point1): # point1 = ("chrom",position)
         chrom1 = point1[0]
@@ -825,10 +682,260 @@ class Graph(object):
                     if verbose:
                         print scores[index], report["Gene1_direction"],"-",report["Gene2_direction"],"|", report["distance"]/1000., "kb","|", self.count_splits_in_path(report["path"]), "translocation(s)", report["path"]
                     to_return = report
-       
             if verbose:
                 print '__________________________'
             return to_return
+
+
+    def karyotype_from_parsimony(self,recordings,output_filename):
+        record_counter = 1
+        f_karyotype=open(output_filename + ".karyotype",'w')
+        f_records = open(output_filename + ".parsimony",'w')
+        for record in recordings:
+            path = record[0]
+            previous_chromosome = "0"
+            chrom_length = 0
+            f_records.write("%d" % (record_counter))
+            for item in path:
+                node,port = item.split(":")
+                this_chromosome = self.nodes[node].attributes["chrom"]
+                if node != "Portal":
+                    f_records.write("\t%s:%d-%d;%s" % (this_chromosome,self.nodes[node].attributes["start"],self.nodes[node].attributes["stop"], "Forward" if port == "stop" else "Reverse"))
+                    # f_records.write("\t%s" % (item))
+                node_length = self.nodes[node].attributes["stop"]-self.nodes[node].attributes["start"]
+                if this_chromosome == previous_chromosome:
+                    chrom_length += node_length
+                else:
+                    if previous_chromosome != "0":
+                        f_karyotype.write("path_"+str(record_counter)+"\t"+previous_chromosome + "\t" + str(chrom_length) + "\n")
+                    previous_chromosome = this_chromosome
+                    chrom_length = node_length
+            f_records.write("\n")
+            record_counter += 1
+
+        f_karyotype.close()
+        f_records.close()
+
+        
+    def find_longest_path(self,use_breadth_first_search=False,depth_limit=50,portal_name="Portal",required_minimum_edge_weight=1,cycle_limit=2):
+        # Two methods for finding all the paths:
+        allpaths = []
+        if use_breadth_first_search:
+            allpaths = self.breadth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"],depth_limit=depth_limit)
+        else:
+            allpaths = self.depth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"],cycle_limit=cycle_limit,depth_limit=depth_limit)
+
+        # print allpaths
+        
+        longest_uninterrupted_path_so_far = []
+        longest_uninterrupted_length_so_far = 0
+        
+        for path in allpaths:
+            current_uninterrupted_length = 0
+            current_chromosome = ""
+            position_where_we_left_off = 0
+            for item in path:
+                node,port = item.split(":")
+                # print "Stop:",self.nodes[node].attributes["stop"]
+                # print "Start:",self.nodes[node].attributes["start"]
+                # # Attributes: # {"chrom":fields[0],"start":int(fields[1]),"stop":int(fields[2]),"x":int(fields[1]),"y":y}
+                seq_length = self.nodes[node].attributes["stop"]-self.nodes[node].attributes["start"]
+                this_chromosome = self.nodes[node].attributes["chrom"]
+                this_position = self.nodes[node].attributes[reverse(port)] # port refers to after the jump, so we reverse that to get the entry point into this node
+                if this_chromosome == current_chromosome and this_position == position_where_we_left_off: 
+                    current_uninterrupted_length += seq_length
+                else:
+                    # Save if this path is the best so far
+                    if current_uninterrupted_length > longest_uninterrupted_length_so_far and self.min_weight(path) >= required_minimum_edge_weight:
+                        longest_uninterrupted_length_so_far = current_uninterrupted_length
+                        longest_uninterrupted_path_so_far = path
+                    # Reset chromosome and length
+                    current_uninterrupted_length = seq_length
+                    current_chromosome = this_chromosome
+                position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
+        return longest_uninterrupted_path_so_far,longest_uninterrupted_length_so_far
+
+    def find_path_lengths(self,allpaths):
+        intact_lengths = []
+
+        for path in allpaths:
+            longest_uninterrupted_length_so_far = 0
+            current_uninterrupted_length = 0
+            current_chromosome = ""
+            position_where_we_left_off = 0
+            for item in path:
+                node,port = item.split(":")
+                # print "Stop:",self.nodes[node].attributes["stop"]
+                # print "Start:",self.nodes[node].attributes["start"]
+                # # Attributes: # {"chrom":fields[0],"start":int(fields[1]),"stop":int(fields[2]),"x":int(fields[1]),"y":y}
+                seq_length = self.nodes[node].attributes["stop"]-self.nodes[node].attributes["start"]
+                this_chromosome = self.nodes[node].attributes["chrom"]
+                this_position = self.nodes[node].attributes[reverse(port)] # port refers to after the jump, so we reverse that to get the entry point into this node
+                if this_chromosome == current_chromosome and this_position == position_where_we_left_off: 
+                    current_uninterrupted_length += seq_length
+                else:
+                    # Save if this path is the best so far
+                    if current_uninterrupted_length > longest_uninterrupted_length_so_far:
+                        longest_uninterrupted_length_so_far = current_uninterrupted_length
+                        # longest_uninterrupted_path_so_far = path
+                    # Reset chromosome and length
+                    current_uninterrupted_length = seq_length
+                    current_chromosome = this_chromosome
+                position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
+            intact_lengths.append(longest_uninterrupted_length_so_far)
+        return intact_lengths
+
+
+    def subtract(self,path,weight):
+        edges = self.edges_from_path(path)
+        for edge in edges:
+            edge.weight = edge.weight - weight
+
+    def parsimony(self,use_breadth_first_search=True,verbose=False,depth_limit=50,max_num_paths = 1000):
+        import time
+        self.add_portal()
+        recording = []
+        before = time.time()
+        i = 0
+        while i < max_num_paths:
+            path,length = self.find_longest_path(use_breadth_first_search=use_breadth_first_search,depth_limit=depth_limit)
+            if path == [] or length == 0:
+                break
+            minweight = self.min_weight(path)
+            recording.append([path,length,minweight])
+            if verbose:
+                print "%.3f seconds,\t %d edges,\t %.2f\tread coverage" % (time.time()-before, len(path)-1,minweight)
+                before = time.time()
+
+            # self.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test." + str(i) + ".dot", use_this_path_only=path[2:-1],path_weight=minweight,maxweight=200)
+            self.subtract(path,minweight)
+            i += 1
+        return recording
+
+
+    def breadth_first_search(self, current_port, destination_port, depth_limit = -1, stop_when_found = False):
+        
+        ###############  Basic steps:  #####################################
+        # jump
+        # make queue with current_port in it
+        # while something is in the queue:
+            # find all edges of current_port
+                # glide
+                # jump
+                # if this new port matches
+                    # return
+                # else 
+                    # add it to the queue
+            # let the while loop repeat to keep exploring the queue
+        #############################################################
+
+        allpaths = []
+
+        current_port = current_port.jump()
+        # if match, then return:
+        if str(current_port) == str(destination_port):
+            if stop_when_found:
+                return [[str(destination_port)]]
+            else:
+                allpaths.append([str(destination_port)])
+
+        queue = [(current_port,[current_port])]
+        while queue:
+            (port, path) = queue.pop(0)
+            if depth_limit != -1 and len(path) > depth_limit:
+                return allpaths
+            edges = port.edges
+            for edge in edges.values():
+                # ignore if already in path
+                # glide
+                current_port = edge.glide(port)
+                # jump
+                current_port = current_port.jump()
+                # if match, then return
+                if str(current_port) == str(destination_port):
+                    if stop_when_found:
+                        return [map(str,path) + [str(destination_port)]]
+                    else:
+                        allpaths.append(map(str,path) + [str(destination_port)])
+                # else append to queue
+                else:
+                    queue.append((current_port, path+[current_port]))
+        return allpaths
+
+
+
+    def depth_first_search_recurse(self,current_port,destination_port,allpaths,depth_limit,cycle_limit,path_so_far=[],stop_when_found = False,depth=0):
+        # saving the ports after jumping, so if the path contains A:start, it means you went through A in the reverse direction. A:stop means forward direction. 
+
+        ############# Basic steps: ################
+        # jump
+        # if current_port == destination_port:
+        #     return allpaths + [path_so_far]
+        # find edges of port
+        # for edge in edges:
+            # glide
+            # recurse
+        ###########################################
+        
+        jumped_port = current_port.jump()
+        
+        saveport = str(jumped_port)
+        if str(jumped_port) == str(destination_port):
+            # print "MATCH"
+            allpaths.append(path_so_far + [saveport]) # new
+        else:
+            edges = jumped_port.edges.values()
+            for edge in edges:
+                glide_port = edge.glide(jumped_port)
+                if stop_when_found and len(allpaths)>0 or depth > depth_limit or path_so_far.count(str(jumped_port)) > cycle_limit:
+                    return
+                else: # keep recursing
+                    self.depth_first_search_recurse(current_port=glide_port, destination_port=destination_port, allpaths=allpaths, path_so_far=path_so_far+[saveport],stop_when_found=stop_when_found,depth_limit=depth_limit,cycle_limit=cycle_limit,depth=depth+1) # new
+
+    def depth_first_search(self,current_port,destination_port,stop_when_found = False,depth_limit=1000,cycle_limit=2):
+        allpaths = []
+        self.depth_first_search_recurse(current_port=current_port,destination_port=destination_port,allpaths=allpaths,stop_when_found=stop_when_found,depth_limit=depth_limit,cycle_limit=cycle_limit)
+        return allpaths
+
+
+
+    def parsimony_2(self,use_breadth_first_search=False,portal_name="Portal",verbose=True,depth_limit=40,cycle_limit=2,min_weight_required = 5):
+        import time
+        self.add_portal()
+        # recording = []
+
+        before = time.time()
+        allpaths = self.depth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"],cycle_limit=cycle_limit,depth_limit=depth_limit)
+        print "DFS:  %.2f seconds" % (time.time()-before)
+        print "Number of paths", len(allpaths)
+        
+        before = time.time()
+        lengths = self.find_path_lengths(allpaths)
+        print "Intact length finding:  %.2f seconds" % (time.time()-before)
+
+        import numpy as np
+        lengths = np.array(lengths)
+        indices = np.argsort(lengths)[::-1]
+        before = time.time()
+        
+        print "Sorting lengths:  %.2f seconds" % (time.time()-before)
+
+        recordings = []
+        for i in xrange(len(indices)): 
+            index = indices[i]
+            path = allpaths[index]
+            weight = self.min_weight(path)
+            if weight < min_weight_required:
+                continue
+            else:
+                recordings.append([path,lengths[index],weight])
+                self.subtract(path=path,weight=weight)
+
+
+
+        return recordings
+
+
 
 
 
