@@ -4,8 +4,6 @@ import unittest
 from SplitThreader import *
 
 
-
-
 class TestNode(unittest.TestCase):
     def setUp(self):
         unittest.TestCase.setUp(self)
@@ -213,18 +211,16 @@ class TestReadingSpansplit(unittest.TestCase):
         
         self.assertEqual(len(self.g.nodes),33)
         self.assertEqual(len(self.g.edges),15)
-        
 
         ############## Draw function ###############
         # self.g.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test.dot")
+        self.g.to_csv("/Applications/XAMPP/htdocs/splitThreadervis/test")
 
 
 class TestAnnotations(unittest.TestCase):
     def setUp(self):
         self.g = Graph()
         testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
-        nodes_filename = testcase_dir + "Her2.spansplit.nodes.bed"
-        edges_filename = testcase_dir + "Her2.spansplit.bedpe"
         nodes_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.nodes.bed"
         edges_filename = testcase_dir + "bwamem.hg19.readname_sorted.mq60.bd200.mw10.primary_chr.over10kb.spansplit.bedpe"
         
@@ -266,24 +262,30 @@ class TestAnnotations(unittest.TestCase):
         path,distance = self.g.calculate_distance(point1,point2)
         self.assertEqual(distance,11000)
 
-    def test_read_annotation(self):
+    def test_gene_fusion_finder_Lumpy(self):
         testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
         annot_filename = testcase_dir + "gencode.v19.annotation.gtf.genes.bed"
         self.g.read_annotation(annot_filename,name_field=8)
         self.assertEqual(len(self.g.annotation),55765)
         
-        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("CYTH1","EIF3H")["path"]),2)
-        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("TATDN1","GSDMB")["path"]),1)
-        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("SUMF1","LRRFIP2")["path"]),1)
-        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("SUMF1","LRRFIP2")["path"]),1)
-        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("PHF20","RP4-723E3.1")["path"]),1)
-        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("RARA","PKIA")["path"]),1)
-        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("MTBP","SAMD12")["path"]),1)
-        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("CYTH1","MTBP")["path"]),1)
-        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("TOX2","STAU1")["path"]),1)
-        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("LINC00536","PVT1")["path"]),1)
+        # self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("CYTH1","EIF3H")["path"]),2)
+        # self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("TATDN1","GSDMB")["path"]),1)
+        # self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("SUMF1","LRRFIP2")["path"]),1)
+        # self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("SUMF1","LRRFIP2")["path"]),1)
+        # self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("PHF20","RP4-723E3.1")["path"]),1)
+        # self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("RARA","PKIA")["path"]),1)
+        # self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("MTBP","SAMD12")["path"]),1)
+        # self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("CYTH1","MTBP")["path"]),1)
+        # self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("TOX2","STAU1")["path"]),1)
+        # self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("LINC00536","PVT1")["path"]),1)
 
-        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("SNTB1","KLHDC2")["path"]),2) # Maybe only in Lumpy calls
+        # # print self.g.gene_fusion_report("SNTB1","KLHDC2")
+        # self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("SNTB1","KLHDC2")["path"]),2) # Maybe only in Lumpy calls
+
+        # self.g.franken_path(self.g.gene_fusion_report("SNTB1","KLHDC2")["path"],"/Users/mnattest/Desktop/SplitThreader_testcases/Lumpy_franken_SNTB1_KLHDC2.txt")
+        # self.g.franken_path(self.g.gene_fusion_report("CYTH1","EIF3H")["path"],"/Users/mnattest/Desktop/SplitThreader_testcases/Lumpy_franken_CYTH1_EIF3H.txt")
+
+
 
         # self.g.gene_fusion_report("CYTH1","EIF3H",verbose=True) # good
         # self.g.gene_fusion_report("TATDN1","GSDMB",verbose=True) # good
@@ -314,7 +316,6 @@ class TestAnnotations(unittest.TestCase):
 
         # # Putative gene fusion through 2 translocations, possibly novel
         # self.g.gene_fusion_report("SNTB1","KLHDC2") # YAY
-
 
 
 class TestParsimony(unittest.TestCase):
@@ -378,8 +379,8 @@ class TestParsimonyGenomeWide(unittest.TestCase):
         # print "Number of edges:", len(self.g.edges)
 
 
-        recordings = self.g.parsimony_2()
-        print "Number of co-existing paths identified:", len(recordings)
+        recordings = self.g.parsimony(depth_limit=10,verbose=False)
+        # print "Number of co-existing paths identified:", len(recordings)
         
         self.g.karyotype_from_parsimony(recordings, output_filename = "/Users/mnattest/Desktop/SplitThreader_testcases/Lumpy_SplitThreader")
 
@@ -405,6 +406,157 @@ class TestParsimonyGenomeWide(unittest.TestCase):
         # self.g3.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test_cycles.dot")
         allpaths = self.g3.depth_first_search(self.g3.nodes["A"].ports["start"],self.g3.nodes["D"].ports["stop"],cycle_limit=2)
         self.assertEqual(len(allpaths),3)
+
+
+class TestSniffles(unittest.TestCase):
+    def setUp(self):
+        self.g = Graph()
+        testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
+        nodes_filename = testcase_dir + "SKBR3_Sniffles_10.19.spansplit.coverage_on_nodes.bed"
+        edges_filename = testcase_dir + "SKBR3_Sniffles_10.19.spansplit.bedpe"
+        
+        self.g.read_spansplit(nodes_filename,edges_filename)
+
+    def test_gene_fusion_finder_Sniffles(self):
+        testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
+        annot_filename = testcase_dir + "gencode.v19.annotation.gtf.genes.bed"
+        self.g.read_annotation(annot_filename,name_field=8)
+        self.assertEqual(len(self.g.annotation),55765)
+        
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("CYTH1","EIF3H")["path"]),2)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("TATDN1","GSDMB")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("SUMF1","LRRFIP2")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("PHF20","RP4-723E3.1")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("RARA","PKIA")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("MTBP","SAMD12")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("CYTH1","MTBP")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("TOX2","STAU1")["path"]),1)
+        self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("CPNE1","PREX1")["path"]),1) # 330kb distance prevented us from seeing it when we did bedtools with 100 kbp slop
+        # report =  self.g.gene_fusion_report("CPNE1","PREX1",verbose=True)
+        # print report
+        # edges = self.g.edges_from_path(report["path"])
+        # for edge in edges:
+        #     print edge.weight
+
+        # "REXO1L11P","TRAM1" Nothing within 1 Mb
+        # "AL590452.1","RP11-495P10.2" Nothing within 1 Mb
+        # "RP11-161H23.5","TUBA1B" Nothing within 1 Mb
+        # "NEK2", "RP11-536C10.10" Nothing within depth limit of 20
+
+
+        # report =  self.g.gene_fusion_report("PREX1","CPNE1",verbose=True,depth_limit=20)
+        # print report
+        # if report != None:
+        #     edges = self.g.edges_from_path(report["path"])
+        #     for edge in edges:
+        #         print edge,edge.weight
+
+
+
+        # f=open(testcase_dir + "IsoSeq_fusions_with_5_reads_but_no_direct_Sniffles")
+        # for line in f:
+        #     fields = line.strip().split()
+        #     report =  self.g.gene_fusion_report(fields[0],fields[1])
+        #     if report == None:
+        #         print fields, "---"
+        #     else:
+        #         print fields, report["number_of_splits"], report["distance"],report["Gene1_direction"],report["Gene2_direction"]
+        #         self.g.franken_path(report["path"],"/Users/mnattest/Desktop/SplitThreader_testcases/Extra_Sniffles_franken_%s_%s.txt" % (fields[0],fields[1]))
+            
+        # f.close()
+
+        # Distances include the sequence of the genes themselves!!
+
+
+        # "LMCD1-AS1","MECOM" may be a legitimate fusion
+
+        # ['RP11-495P10.2', 'RP6-206I17.1'] ---
+        # ['SRGAP2-AS1', 'SRGAP2B'] ---
+        # ['SRGAP2', 'SRGAP2B'] ---
+        # ['AL590452.1', 'RP11-495P10.2'] ---
+        # ['PDE4DIP', 'RP11-495P10.2'] ---
+        # ['RP11-326G21.1', 'RP11-495P10.2'] ---
+        # ['NOTCH2NL', 'WI2-3658N16.1'] ---
+        # ['RP11-458D21.5', 'WI2-3658N16.1'] ---
+        # ['NBPF10', 'WI2-3658N16.1'] ---
+        # ['NEK2', 'RP11-536C10.10'] ---
+        # ['RP11-161H23.5', 'RP11-386G11.10'] ---
+        # ['RP11-161H23.5', 'TUBA1B'] ---
+        # ['RP11-386G11.10', 'TUBA1C'] ---
+        # ['TUBA1B', 'TUBA1C'] ---
+        # ['KRT8', 'KRT8P12'] ---
+        # ['KLHDC2', 'MTBP'] ---
+        # ['KLHDC2', 'SNTB1'] 2 764561.0 Reverse Reverse
+        # ['RAD51B', 'SEMA6D'] ---
+        # ['NPIPB4', 'snoU13'] ---
+        # ['NPIPB4', 'RP11-347C12.1'] ---
+        # ['NPIPB4', 'RP11-347C12.2'] ---
+        # ['LSM3P5', 'WWOX'] ---
+        # ['RP11-190D6.2', 'WWOX'] ---
+        # ['CYTH1', 'EIF3H'] 2 164104.0 Forward Forward
+        # ['CPNE1', 'PREX1'] 1 330061.0 Reverse Reverse
+                # ['PREX1', 'RP1-309K20.6'] 1 323752.0 Forward Forward
+                # ['PREX1', 'RBM12'] 1 307167.0 Forward Forward
+                # ['PREX1', 'RN7SKP271'] 1 312630.0 Forward Forward
+                # ['PREX1', 'RNU6-759P'] 1 308764.0 Forward Forward
+        # ['LMCD1-AS1', 'MECOM'] 1 374660.0 Reverse Reverse
+                # ['LMCD1-AS1', 'RP11-3K16.2'] 1 334993.0 Reverse Reverse
+                # ['LMCD1-AS1', 'RP11-641D5.1'] 1 195122.0 Reverse Reverse
+                # ['LMCD1-AS1', 'RP11-641D5.2'] 1 158909.0 Reverse Reverse
+        # ['NPCDR1', 'RP11-641C17.1'] ---
+        # ['NPCDR1', 'RP11-641C17.2'] ---
+        # ['NPCDR1', 'RP11-641C17.3'] ---
+        # ['NPCDR1', 'RP11-641C17.4'] ---
+        # ['NPCDR1', 'U3'] ---
+        # ['FHIT', 'U3'] ---
+        # ['FHIT', 'NPCDR1'] ---
+        # ['FHIT', 'RP11-641C17.1'] ---
+        # ['FHIT', 'RP11-641C17.2'] ---
+        # ['FHIT', 'RP11-641C17.3'] ---
+        # ['FHIT', 'RP11-641C17.4'] ---
+        # ['FAM172A', 'NPM1'] ---
+        # ['NPM1', 'NPM1P27'] ---
+        # ['DIAPH1', 'GNPDA1'] 2 501291.0 Reverse Reverse # in intact chromosome they are already within 381 kbp of each other, so not a real fusion but maybe read-through transcription
+        # ['HIBADH', 'NEDD9'] ---
+        # ['HIBADH', 'RP3-510L9.1'] ---
+        # ['REXO1L1', 'snoU13'] ---
+        # ['REXO1L1', 'TRAM1'] ---
+        # ['REXO1L11P', 'snoU13'] ---
+        # ['REXO1L11P', 'TRAM1'] ---
+        # ['REXO1L10P', 'snoU13'] ---
+        # ['REXO1L10P', 'TRAM1'] ---
+        # ['MRPL13', 'SAMD12'] 1 285149.0 Reverse Reverse
+
+
+
+
+        # print self.g.gene_fusion_report("LINC00536","PVT1",verbose=True)
+        # self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("LINC00536","PVT1",depth_limit=10,verbose=False)["path"]),1)
+        # print self.g.gene_fusion_report("SNTB1","KLHDC2")
+        # self.assertEqual(self.g.count_splits_in_path(self.g.gene_fusion_report("SNTB1","KLHDC2")["path"]),2) 
+        # report = self.g.gene_fusion_report("SNTB1","KLHDC2",verbose=True)
+        
+        # edges = self.g.edges_from_path(report["path"])
+        # for edge in edges:
+        #     print edge.weight
+
+
+        # self.g.franken_path(self.g.gene_fusion_report("SNTB1","KLHDC2")["path"],"/Users/mnattest/Desktop/SplitThreader_testcases/Sniffles_franken_SNTB1_KLHDC2.txt")
+        # self.g.franken_path(self.g.gene_fusion_report("CYTH1","EIF3H")["path"],"/Users/mnattest/Desktop/SplitThreader_testcases/Sniffles_franken_CYTH1_EIF3H.txt")
+
+        # f=open(testcase_dir + "gene_pairs_to_check")
+        # for line in f:
+        #     fields = line.strip().split()
+        #     # print fields
+        #     # print self.g.gene_fusion_report(fields[0],fields[1],verbose=True)
+        #     report = self.g.gene_fusion_report(fields[0],fields[1])
+        #     if report == None:
+        #         print "No fusions for",fields[0],"and", fields[1]
+        #     else:
+        #         self.g.franken_path(report["path"],"/Users/mnattest/Desktop/SplitThreader_testcases/Sniffles_franken_%s_%s.bed" % (fields[0],fields[1]))
+
+        # f.close()
+
 
 
 def main():

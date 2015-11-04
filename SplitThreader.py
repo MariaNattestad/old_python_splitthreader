@@ -324,6 +324,20 @@ class Graph(object):
             #     break           # TESTING
         f.close()
 
+    def to_csv(self,output_prefix):
+        f=open(output_prefix + ".nodes.csv",'w')
+        for node_name in self.nodes:
+            node = self.nodes[node_name]
+            f.write("%s,%s,%d,%d\n" % (node.name, node.attributes["chrom"], node.attributes["start"], node.attributes["stop"]));
+        f.close()
+
+        f=open(output_prefix + ".edges.csv",'w')
+        for edge in self.edges:
+            p1 = edge.ports[0]
+            p2 = edge.ports[1]
+            f.write("%s,%s,%s,%s,%f\n" % (p1.node.name,p1.name,p2.node.name,p2.name,edge.weight));
+            
+        f.close()
 
     def draw(self,output_filename, call_neato=True, use_this_path_only=[], path_weight=1, maxweight=1, max_linewidth=10, max_x_pixels=600, max_y_pixels=600, portal_name="Portal"):
         f=open(output_filename,'w')
@@ -571,7 +585,7 @@ class Graph(object):
             #     break
         f.close()
 
-    def gene_fusion_distance(self,gene_name1,gene_name2,depth_limit=5,verbose=False):
+    def gene_fusion_distance(self,gene_name1,gene_name2,depth_limit,verbose=False):
         annot1 = self.annotation.get(gene_name1)
         annot2 = self.annotation.get(gene_name2)
         
@@ -635,7 +649,7 @@ class Graph(object):
             position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
         return num_splits
 
-    def gene_fusion_report(self,gene_name1,gene_name2,depth_limit=7,verbose = False):
+    def gene_fusion_report(self,gene_name1,gene_name2,depth_limit=15,verbose = False):
         if verbose:
             print gene_name1,"-",gene_name2
         # print gene_name1, self.annotation.get(gene_name1)
@@ -661,30 +675,37 @@ class Graph(object):
             for report in reports:
                 score = 0
                 num_splits = self.count_splits_in_path(report["path"])
-                if report["Gene1_direction"] == "Forward" and report["Gene2_direction"] == "Forward":
-                    score += 50
-                if num_splits == 1:
-                    score += 100
-                elif num_splits == 2:
-                    score += 50
-                if report["distance"] < 100000:
-                    score += 10
-                elif report["distance"] < 1000000:
-                    score += 5
+                if report["Gene1_direction"] == report["Gene2_direction"] and num_splits==1 and report["distance"]<100000:
+                    score = 150
+                elif report["Gene1_direction"] == report["Gene2_direction"] and num_splits==1 and report["distance"]<1000000:
+                    score = 100
+                elif num_splits==1 and report["distance"]<1000000:
+                    score = 70
+                elif report["Gene1_direction"] == report["Gene2_direction"] and num_splits==2 and report["distance"]<1000000:
+                    score = 50
+                else:
+                    score = 20
+                if report["distance"] < 1000000:
+                    score = score - 20*report["distance"]*1.0/1000000.
                 scores.append(score)
             import numpy as np
             scores = np.array(scores)
+            if max(scores) <= 20:
+                return None
             indices = np.argsort(scores)[::-1]
             to_return = None
             for index in indices:
                 if scores[index] == max(scores):
                     report = reports[index]
+                    report["number_of_splits"] = self.count_splits_in_path(report["path"])
                     if verbose:
                         print scores[index], report["Gene1_direction"],"-",report["Gene2_direction"],"|", report["distance"]/1000., "kb","|", self.count_splits_in_path(report["path"]), "translocation(s)", report["path"]
                     to_return = report
             if verbose:
                 print '__________________________'
+
             return to_return
+        # maybe put in a safety so genes that are already close to each other aren't reported as fusions unless the variants bring them closer so it's not read-through transcription
 
 
     def karyotype_from_parsimony(self,recordings,output_filename):
@@ -707,7 +728,8 @@ class Graph(object):
                     chrom_length += node_length
                 else:
                     if previous_chromosome != "0":
-                        f_karyotype.write("path_"+str(record_counter)+"\t"+previous_chromosome + "\t" + str(chrom_length) + "\n")
+                        f_karyotype.write("%d\t%s\t%d\t%.2f\n" % (record_counter,previous_chromosome,chrom_length,record[2]))
+                        # f_karyotype.write("path_"+str(record_counter)+"\t"+previous_chromosome + "\t" + str(chrom_length) + "\n")
                     previous_chromosome = this_chromosome
                     chrom_length = node_length
             f_records.write("\n")
@@ -790,28 +812,6 @@ class Graph(object):
         edges = self.edges_from_path(path)
         for edge in edges:
             edge.weight = edge.weight - weight
-
-    def parsimony(self,use_breadth_first_search=True,verbose=False,depth_limit=50,max_num_paths = 1000):
-        import time
-        self.add_portal()
-        recording = []
-        before = time.time()
-        i = 0
-        while i < max_num_paths:
-            path,length = self.find_longest_path(use_breadth_first_search=use_breadth_first_search,depth_limit=depth_limit)
-            if path == [] or length == 0:
-                break
-            minweight = self.min_weight(path)
-            recording.append([path,length,minweight])
-            if verbose:
-                print "%.3f seconds,\t %d edges,\t %.2f\tread coverage" % (time.time()-before, len(path)-1,minweight)
-                before = time.time()
-
-            # self.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test." + str(i) + ".dot", use_this_path_only=path[2:-1],path_weight=minweight,maxweight=200)
-            self.subtract(path,minweight)
-            i += 1
-        return recording
-
 
     def breadth_first_search(self, current_port, destination_port, depth_limit = -1, stop_when_found = False):
         
@@ -899,26 +899,27 @@ class Graph(object):
 
 
 
-    def parsimony_2(self,use_breadth_first_search=False,portal_name="Portal",verbose=True,depth_limit=40,cycle_limit=2,min_weight_required = 5):
+    def parsimony(self,use_breadth_first_search=False,portal_name="Portal",verbose=True,depth_limit=20,cycle_limit=2,min_weight_required = 5):
         import time
         self.add_portal()
         # recording = []
 
         before = time.time()
         allpaths = self.depth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"],cycle_limit=cycle_limit,depth_limit=depth_limit)
-        print "DFS:  %.2f seconds" % (time.time()-before)
-        print "Number of paths", len(allpaths)
+        if verbose==True:
+            print "DFS:  %.2f seconds" % (time.time()-before)
+            print "Number of paths", len(allpaths)
         
         before = time.time()
         lengths = self.find_path_lengths(allpaths)
-        print "Intact length finding:  %.2f seconds" % (time.time()-before)
+        if verbose==True: print "Intact length finding:  %.2f seconds" % (time.time()-before)
 
         import numpy as np
         lengths = np.array(lengths)
         indices = np.argsort(lengths)[::-1]
         before = time.time()
         
-        print "Sorting lengths:  %.2f seconds" % (time.time()-before)
+        if verbose==True: print "Sorting lengths:  %.2f seconds" % (time.time()-before)
 
         recordings = []
         for i in xrange(len(indices)): 
@@ -931,9 +932,36 @@ class Graph(object):
                 recordings.append([path,lengths[index],weight])
                 self.subtract(path=path,weight=weight)
 
-
-
         return recordings
+
+    def franken_path(self,path,output_filename = None):
+        print "Franken-path:"
+        print path
+        counter = 1
+        output = ""
+        for item in path:
+            node_name,port = item.split(":")
+            node = self.nodes[node_name]
+            strand = "+"
+            if port == "start":
+                strand = "-"
+            output += "%s\t%d\t%d\t%03d\t0\t%s\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],counter, strand) 
+            # output += "%03d\t%s:%d-%d\t%s\n" % (counter, node.attributes["chrom"],node.attributes["start"], node.attributes["stop"], strand)
+            counter += 1
+        if output_filename == None:
+            print output
+        else:
+            f=open(output_filename,"w")
+            f.write(output)
+            f.close()
+            print "bedtools getfasta -s -fi $REFERENCE -bed %s -fo %s.fasta" % (output_filename,output_filename)
+        # print "bedtools getfasta -s -fi $REFERENCE -bed $FILE -fo $FILE.fasta"
+
+
+
+
+
+
 
 
 
