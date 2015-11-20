@@ -931,7 +931,7 @@ class Graph(object):
 
 
 
-    def find_cycles(self,depth_limit=50):
+    def find_cycles(self,depth_limit=20):
         portal_name="Portal"
         self.add_portal()
 
