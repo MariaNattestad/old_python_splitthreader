@@ -61,3 +61,13 @@ self.g.franken_path(report["path"],output_filename)
 ## Now you can realign the RNA-seq or IsoSeq data, or even the DNA sequences near those breakpoints, onto the franken-junction to see how well the reads support the junction. 
 
 
+
+# Parsimony: small graphs only for now as runtime depends heavily on depth limit (maximum number of edges to travel down)
+recordings = g.parsimony(depth_limit=10, verbose=False)
+
+# Save the paths to a file for later analysis:
+g.karyotype_from_parsimony(recordings, output_filename = file_name_for_karyotype_output)
+
+
+
+

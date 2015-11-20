@@ -81,6 +81,7 @@ class Edge(object):
     def __init__(self,port1,port2):
         self.ports = (port1,port2)
         self.weight = 0
+        self.spansplit = "split" # "span" or "split"
 
     @property
     def n1(self): return self.ports[0].node.name
@@ -159,7 +160,7 @@ class Graph(object):
             else:
                 self.nodes[node_name] = Node(node_name)
 
-    def create_edges(self,edge_list,weight_list = []):
+    def create_edges(self,edge_list,weight_list = [],spansplit="split"):
         # edge_list contains node:port -- node:port pairs
 
         for i in xrange(len(edge_list)):
@@ -175,6 +176,7 @@ class Graph(object):
             e = Edge(self.nodes[node1].ports[port1],self.nodes[node2].ports[port2])
             if len(weight_list) == len(edge_list):
                 e.weight = weight_list[i]
+            e.spansplit = spansplit
             self.edges.append(e)
             # self.nodes[node1].ports[port1].edges.append(e)
             # self.nodes[node2].ports[port2].edges.append(e)
@@ -212,7 +214,7 @@ class Graph(object):
             print "Dictionary:"
             print self.node_lookup
             raise FileFormatError("node in spansplit file doesn't exist in spansplit.nodes file")
-        self.create_edge(node1,port1,node2,port2,weight_split)
+        self.create_edge(node1,port1,node2,port2,weight_split,spansplit="split")
 
         # print "=================================================================="
         # print "Split:"
@@ -230,7 +232,7 @@ class Graph(object):
         # print node1, port1
         # print rev_node1, rev_port1
         
-        self.create_edge(node1,port1,rev_node1,rev_port1,weight_span1)
+        self.create_edge(node1,port1,rev_node1,rev_port1,weight_span1,spansplit="span")
 
         # span 2
         rev_key2 = (key2[0],key2[1],reverse(key2[2]))
@@ -242,11 +244,11 @@ class Graph(object):
         # print node2, port2
         # print rev_node2, rev_port2
         
-        self.create_edge(node2,port2,rev_node2,rev_port2,weight_span2)
+        self.create_edge(node2,port2,rev_node2,rev_port2,weight_span2,spansplit="span")
 
 
 
-    def create_edge(self,node1,port1,node2,port2,weight):
+    def create_edge(self,node1,port1,node2,port2,weight,spansplit="split"):
         # print node1
         # print port1
         # print self.nodes[node1].ports[port1]
@@ -257,6 +259,7 @@ class Graph(object):
         # print "_______________"
         e = Edge(self.nodes[node1].ports[port1], self.nodes[node2].ports[port2])
         e.weight = weight
+        e.spansplit=spansplit
         self.edges.append(e)
         self.nodes[node1].ports[port1].edges[self.nodes[node2].ports[port2]] = e
         self.nodes[node2].ports[port2].edges[self.nodes[node1].ports[port1]] = e
@@ -338,6 +341,82 @@ class Graph(object):
             f.write("%s,%s,%s,%s,%f\n" % (p1.node.name,p1.name,p2.node.name,p2.name,edge.weight));
             
         f.close()
+
+    def to_json(self,output_filename):
+        node_id_dictionary = {}
+        counter = 0
+        f=open(output_filename,'w')
+        f.write('{\n"nodes":[\n')
+        for node_name in self.nodes:
+            no_start = False
+            no_stop = False
+            if len(self.nodes[node_name].ports["start"].edges.values()) == 0:
+                no_start = True
+            if len(self.nodes[node_name].ports["stop"].edges.values()) == 0:
+                no_stop = True
+
+            node = self.nodes[node_name]
+            prefix = ",\n"
+            if counter == 0:
+                prefix = ""
+            length = 10
+            if "start" in node.attributes and "stop" in node.attributes:
+                length = node.attributes["stop"]-node.attributes["start"]
+            chrom = "1"
+            if "chrom" in node.attributes:
+                chrom = node.attributes["chrom"]
+            
+            node_id_dictionary[node_name+":start"] = counter
+            counter += 1
+            significance = "None"
+            if no_start == True:
+                significance = "chrom_start"
+            f.write(prefix + '\t{"name":"%s:start","chrom":"%s","seqlength":%d,"significance":"%s"}' % (node.name, chrom, length, significance));
+
+
+            node_id_dictionary[node_name+":stop"] = counter
+            counter += 1
+            significance = "None"
+            if no_stop == True:
+                significance = "chrom_end"
+            f.write(",\n" + '\t{"name":"%s:stop","chrom":"%s","seqlength":%d,"significance":"%s"}' % (node.name, chrom, length, significance));
+
+        counter = 0
+        f.write('\n],\n"links":[\n')
+        for edge in self.edges:
+            p1 = edge.ports[0]
+            p2 = edge.ports[1]
+            counter += 1
+            prefix = ",\n"
+            if counter == 1:
+                prefix = ""
+            chrom = "None"
+            if edge.spansplit=="span":
+                chrom = p1.node.attributes["chrom"]
+
+            f.write(prefix + '\t{"source":%d,"target":%d,"value":%f,"attribute":"%s","chrom":"%s"}' % (node_id_dictionary[str(p1)],  node_id_dictionary[str(p2)],edge.weight,edge.spansplit,chrom));
+        prefix = ",\n"
+
+        for node_name in self.nodes:
+            node = self.nodes[node_name]
+            chrom = "1"
+            if "chrom" in node.attributes:
+                chrom = node.attributes["chrom"]
+            length = 10
+            if "start" in node.attributes and "stop" in node.attributes:
+                length = node.attributes["stop"]-node.attributes["start"]
+            f.write(prefix + '\t{"source":%d,"target":%d,"value":%f,"attribute":"sequence","chrom":"%s","seqlength":%d}' % (node_id_dictionary[node_name+":start"],  node_id_dictionary[node_name+":stop"],500,chrom,length));
+            
+        f.write("\n]\n}\n")
+        f.close()
+
+    # def paths_to_json(self,paths,output_filename):
+    #     f = open(output_filename,"w")
+    #     f.write('{\n"paths":[')
+    #     for path in paths:
+    #         f.write(path)
+
+    #     f.close()
 
     def draw(self,output_filename, call_neato=True, use_this_path_only=[], path_weight=1, maxweight=1, max_linewidth=10, max_x_pixels=600, max_y_pixels=600, portal_name="Portal"):
         f=open(output_filename,'w')
@@ -543,6 +622,12 @@ class Graph(object):
                 shortest_path = all_connections[i]
         return shortest_path,min_distance
 
+    def path_sequence_length(self,path):
+        distance = 0
+        for item in path:
+            intermediate_node = self.port_from_path_item(item).node
+            distance += intermediate_node.attributes["stop"] - intermediate_node.attributes["start"]
+        return distance
 
     def find_paths_by_directions(self,node1,node2,pos1,pos2,strand1,strand2,depth_limit=5):
         node1_start_port = "start" if strand1=="+" else "stop"
@@ -633,20 +718,27 @@ class Graph(object):
         return reports
 
     def count_splits_in_path(self,path):
-        num_splits = -1
-
-        current_chromosome = ""
-        position_where_we_left_off = 0
-        for item in path:
-            node,port = item.split(":")
-            this_chromosome = self.nodes[node].attributes["chrom"]
-            this_position = self.nodes[node].attributes[reverse(port)] # port refers to after the jump, so we reverse that to get the entry point into this node
-            if this_chromosome == current_chromosome and this_position == position_where_we_left_off: 
-                pass # reference spanning, not a split
-            else:
+        num_splits = 0
+        edges = self.edges_from_path(path)
+        for edge in edges:
+            if edge.spansplit == "split":
                 num_splits += 1
-                current_chromosome = this_chromosome
-            position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
+
+        ################# This is the old way before I started encoding spansplit as an edge property
+        # num_splits = -1
+
+        # current_chromosome = ""
+        # position_where_we_left_off = 0
+        # for item in path:
+        #     node,port = item.split(":")
+        #     this_chromosome = self.nodes[node].attributes["chrom"]
+        #     this_position = self.nodes[node].attributes[reverse(port)] # port refers to after the jump, so we reverse that to get the entry point into this node
+        #     if this_chromosome == current_chromosome and this_position == position_where_we_left_off: 
+        #         pass # reference spanning, not a split
+        #     else:
+        #         num_splits += 1
+        #         current_chromosome = this_chromosome
+        #     position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
         return num_splits
 
     def gene_fusion_report(self,gene_name1,gene_name2,depth_limit=15,verbose = False):
@@ -897,6 +989,73 @@ class Graph(object):
         self.depth_first_search_recurse(current_port=current_port,destination_port=destination_port,allpaths=allpaths,stop_when_found=stop_when_found,depth_limit=depth_limit,cycle_limit=cycle_limit)
         return allpaths
 
+
+
+
+
+    def cycle_depth_first_search_recurse(self,current_port,destination_port,cycles_found,depth_limit,path_so_far=[],depth=0):
+        # saving the ports after jumping, so if the path contains A:start, it means you went through A in the reverse direction. A:stop means forward direction. 
+
+        ############# Basic steps: ################
+        # jump
+        # if current_port == destination_port:
+        #     return allpaths + [path_so_far]
+        # find edges of port
+        # for edge in edges:
+            # glide
+            # recurse
+        ###########################################
+        
+        jumped_port = current_port.jump()
+        
+        saveport = str(jumped_port)
+        if str(jumped_port) == str(destination_port) or depth > depth_limit :
+            pass
+            # print "MATCH"
+            # allpaths.append(path_so_far + [saveport]) # new
+        else:
+            edges = jumped_port.edges.values()
+            for edge in edges:
+                glide_port = edge.glide(jumped_port)
+                if str(jumped_port) in path_so_far:
+                    cycles_found.append(path_so_far+[saveport])
+                else: # keep recursing
+                    self.cycle_depth_first_search_recurse(current_port=glide_port, destination_port=destination_port, cycles_found=cycles_found, path_so_far=path_so_far+[saveport],depth_limit=depth_limit,depth=depth+1) # new
+
+
+
+    def find_cycles(self,depth_limit=50):
+        portal_name="Portal"
+        self.add_portal()
+
+        cycles_found = []
+        self.cycle_depth_first_search_recurse(current_port=self.nodes[portal_name].ports["start"], destination_port=self.nodes[portal_name].ports["start"], cycles_found=cycles_found,depth_limit=depth_limit)
+        
+        cycles_only = []
+        for cycle in cycles_found:
+            index = cycle.index(cycle[-1])
+            cycles_only.append(cycle[index:])
+
+        return self.collapse_redundant_paths(cycles_only)
+
+    def collapse_redundant_paths(self,paths):
+        paths_used = []
+        edge_lists_used = []
+        for path in paths:
+            edge_list = set(self.edges_from_path(path))
+            if paths_used == []:
+                paths_used.append(path)
+                edge_lists_used.append(edge_list)
+            else:
+                redundant = False
+                for previous_edge_list in edge_lists_used:
+                    if edge_list == previous_edge_list:
+                        redundant = True
+                if redundant == False:
+                    paths_used.append(path)
+                    edge_lists_used.append(edge_list)
+
+        return paths_used
 
 
     def parsimony(self,use_breadth_first_search=False,portal_name="Portal",verbose=True,depth_limit=20,cycle_limit=2,min_weight_required = 5):

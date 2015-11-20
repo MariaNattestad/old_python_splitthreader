@@ -29,7 +29,7 @@ class TestGraph(unittest.TestCase):
         self.g.create_edges([   (("A","start"),("B","stop")),    (("B","start"),("C","start"))  ])
         
         self.g2 = Graph()
-        self.g2.create_nodes_with_attributes({"A":{"x":0,"y":0}, "B":{"x":2,"y":0}, "C":{"x":1,"y":1}})
+        self.g2.create_nodes_with_attributes({"A":{"x":0,"y":0,"chrom":"1"}, "B":{"x":2,"y":0,"chrom":"1"}, "C":{"x":1,"y":1,"chrom":"2"}})
         self.g2.create_edges([   (("A","start"),("B","stop")),    (("B","start"),("C","start"))   ], [40,100])
 
     def test_graph_created(self):
@@ -184,8 +184,9 @@ class TestGraph(unittest.TestCase):
 
     def test_subtract_edge_twice(self):
         self.g3 = Graph()
-        self.g3.create_nodes_with_attributes({"A":{"x":0,"y":0}, "B":{"x":2,"y":0}, "C":{"x":1,"y":1}})
+        self.g3.create_nodes_with_attributes({"A":{"x":0,"y":0,"chrom":"1"}, "B":{"x":2,"y":0,"chrom":"1"}, "C":{"x":1,"y":1,"chrom":"2"}})
         self.g3.create_edges([   (("A","start"),("B","stop"))  ,  (("B","start"),("C","start"))  ,  (("C","stop"),("C","stop"))   ], [40,100,80])
+
 
         this_port = self.g3.nodes["A"].ports["stop"]
 
@@ -196,6 +197,10 @@ class TestGraph(unittest.TestCase):
         self.g3.subtract(path,minweight)
         self.assertEqual(self.g3.min_weight(path),0)
 
+    def test_to_json(self):
+        g = Graph()
+        g.create_nodes_with_attributes({"A":{"chrom":"1"}, "B":{"chrom":"1"}, "C":{"chrom":"2"}, "D":{"chrom":"3"}, "E":{"chrom":"2"}})
+        g.create_edges([   (("A","start"),("B","stop"))  ,  (("B","start"),("C","start"))  ,  (("C","stop"),("C","stop")) , (("C","start"),("A","stop")) , (("E","start"),("D","stop"))  ], [40,100,80,50,100])
 
 class TestReadingSpansplit(unittest.TestCase):
 
@@ -215,6 +220,7 @@ class TestReadingSpansplit(unittest.TestCase):
         ############## Draw function ###############
         # self.g.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test.dot")
         self.g.to_csv("/Applications/XAMPP/htdocs/splitThreadervis/test")
+
 
 
 class TestAnnotations(unittest.TestCase):
@@ -401,12 +407,19 @@ class TestParsimonyGenomeWide(unittest.TestCase):
 
     def test_cycle_limit_in_DFS(self):
         self.g3 = Graph()
-        self.g3.create_nodes_with_attributes({    "A":{"x":0,"y":0},  "B":{"x":1,"y":0},  "C":{"x":1,"y":1},   "D":{"x":2,"y":0}    })
+        self.g3.create_nodes_with_attributes({    "A":{"x":0,"y":0,"chrom":"1"},  "B":{"x":1,"y":0,"chrom":"2"},  "C":{"x":1,"y":1,"chrom":"3"},   "D":{"x":2,"y":0,"chrom":"4"}    })
         self.g3.create_edges([   (("A","stop"),("B","start"))  ,  (("B","stop"),("C","stop"))  ,  (("C","start"),("B","start"))  ,  (("B","stop"),("D","start"))   ], [20,40,40,20])
+        self.g3.to_json("/Applications/XAMPP/htdocs/force_layout/cycle_graph.json")
+
         # self.g3.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test_cycles.dot")
         allpaths = self.g3.depth_first_search(self.g3.nodes["A"].ports["start"],self.g3.nodes["D"].ports["stop"],cycle_limit=2)
         self.assertEqual(len(allpaths),3)
 
+        cycles = self.g3.find_cycles()
+        print cycles
+        
+        # self.g3.paths_to_json(cycles,output_filename="/Applications/XAMPP/htdocs/force_layout/cycle_paths.json")
+        
 
 class TestSniffles(unittest.TestCase):
     def setUp(self):
@@ -416,6 +429,9 @@ class TestSniffles(unittest.TestCase):
         edges_filename = testcase_dir + "SKBR3_Sniffles_10.19.spansplit.bedpe"
         
         self.g.read_spansplit(nodes_filename,edges_filename)
+
+    def test_to_json(self):
+        self.g.to_json("/Applications/XAMPP/htdocs/force_layout/splitthreader_sniffles.json")
 
     def test_gene_fusion_finder_Sniffles(self):
         testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
@@ -556,6 +572,7 @@ class TestSniffles(unittest.TestCase):
         #         self.g.franken_path(report["path"],"/Users/mnattest/Desktop/SplitThreader_testcases/Sniffles_franken_%s_%s.bed" % (fields[0],fields[1]))
 
         # f.close()
+
 
 
 
