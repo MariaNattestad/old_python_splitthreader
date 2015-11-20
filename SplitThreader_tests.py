@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import unittest
-from SplitThreader import *
+from SplitThreaderLib import *
 
 
 class TestNode(unittest.TestCase):
@@ -217,8 +217,6 @@ class TestReadingSpansplit(unittest.TestCase):
         self.assertEqual(len(self.g.nodes),33)
         self.assertEqual(len(self.g.edges),15)
 
-        ############## Draw function ###############
-        # self.g.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test.dot")
         self.g.to_csv("/Applications/XAMPP/htdocs/splitThreadervis/test")
 
 
@@ -411,7 +409,6 @@ class TestParsimonyGenomeWide(unittest.TestCase):
         self.g3.create_edges([   (("A","stop"),("B","start"))  ,  (("B","stop"),("C","stop"))  ,  (("C","start"),("B","start"))  ,  (("B","stop"),("D","start"))   ], [20,40,40,20])
         self.g3.to_json("/Applications/XAMPP/htdocs/force_layout/cycle_graph.json")
 
-        # self.g3.draw("/Users/mnattest/Desktop/SplitThreader_testcases/test_cycles.dot")
         allpaths = self.g3.depth_first_search(self.g3.nodes["A"].ports["start"],self.g3.nodes["D"].ports["stop"],cycle_limit=2)
         self.assertEqual(len(allpaths),3)
 
