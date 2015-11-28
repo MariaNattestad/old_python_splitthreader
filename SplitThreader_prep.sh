@@ -10,10 +10,14 @@ READ_BED=
 # Output prefix:
 NAME=
 
+# File where each line has a chromosome name (column 1) and the length of the chromosome (column 2)
+GENOME_FILE=
+
 # Example inputs:
 # READ_BED=/seq/schatz/mnattest/hg19_skbr3/analysis/bwamem.hg19.position_sorted.bed
 # BEDPE=/seq/schatz/SKBR3/Sniffles/SKBR3_Sniffles_10.19.primary_chrom.over10kb.merge_within_1kb.darkzone_filtered.bedpe
 # NAME=/seq/schatz/SKBR3/SpanSplit/SKBR3_Sniffles_10.19
+# GENOME_FILE=/seq/schatz/SKBR3/reference/genome_files_for_bedtools/human_g1k_v37.fasta.genome
 
 SLOP=1000
 MQ=60
@@ -29,7 +33,7 @@ awk '{print $1,$2,$3,$7,1; print $4,$5,$6,$7,2}' OFS="\t" $NAME.calls.expanded.b
 time bedtools intersect -a $READ_BED -b $NAME.calls.encoding.bed -wb > $NAME.reads_near_breakpoints.bed
 
 # Count reads spanning and split
-spansplit.py -bedpe $BEDPE -reads $NAME.reads_near_breakpoints.bed -out $NAME -mq $MQ -slop $SLOP
+spansplit.py -bedpe $BEDPE -reads $NAME.reads_near_breakpoints.bed -out $NAME -mq $MQ -slop $SLOP -genome-file $GENOME_FILE
 
 
 # Get coverage on each node
