@@ -430,6 +430,15 @@ class TestSniffles(unittest.TestCase):
     def test_to_json(self):
         self.g.to_json("/Applications/XAMPP/htdocs/force_layout/splitthreader_sniffles.json")
 
+    def test_subgraph_selection(self):
+        nodes = self.g.nodes_within_genome_interval("17",37200000,40600000)
+        # print nodes
+        s = self.g.subgraph_from_nodes(nodes)
+        print s
+        print s.edges
+        recordings = s.parsimony()       
+        print recordings
+
     def test_gene_fusion_finder_Sniffles(self):
         testcase_dir = "/Users/mnattest/Desktop/SplitThreader_testcases/"
         annot_filename = testcase_dir + "gencode.v19.annotation.gtf.genes.bed"

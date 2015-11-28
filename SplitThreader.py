@@ -6,7 +6,9 @@ import time
 # Example:
 # SplitThreader.py check --variants SKBR3_Sniffles_10.19.spansplit.bedpe --nodes SKBR3_Sniffles_10.19.spansplit.coverage_on_nodes.bed
 # SplitThreader.py fusions --variants SKBR3_Sniffles_10.19.spansplit.bedpe --nodes SKBR3_Sniffles_10.19.spansplit.coverage_on_nodes.bed --annotation gencode.v19.annotation.gtf.genes.bed --list IsoSeq_fusions_with_5_reads_but_no_direct_Sniffles --out test
+# SplitThreader.py parsimony --variants SKBR3_Sniffles_10.19.spansplit.bedpe --nodes SKBR3_Sniffles_10.19.spansplit.coverage_on_nodes.bed --out test --chrom 17 --start 37000000 --end 41000000
 # SplitThreader.py cycles --variants SKBR3_Sniffles_10.19.spansplit.bedpe --nodes SKBR3_Sniffles_10.19.spansplit.coverage_on_nodes.bed --out test
+
 
 def initialize(args):
     nodes_filename = args.nodes_from_spansplit
@@ -52,10 +54,20 @@ def fusions(args):
     f.close()
 
 def parsimony(args):
-    region_chromosome = args.zoom_region_chrom
-    print region_chromosome
+    chromosome = args.zoom_region_chrom
+    start = args.zoom_region_start
+    end = args.zoom_region_end
+    output_karyotype = args.output_prefix
 
     g = initialize(args)
+
+    s = g.subgraph_from_genome_interval(chromosome,start,end)
+    print "Number of nodes:", len(s.nodes)
+    print "Number of edges:", len(s.edges)
+
+    recordings = s.parsimony(depth_limit = 30)
+    print "Parsimonious set of", len(recordings), "paths found"
+    s.karyotype_from_parsimony(recordings,output_filename=output_karyotype)
 
 def cycles(args):
     g = initialize(args)
@@ -78,7 +90,6 @@ def cycles(args):
 
     # g.paths_to_json(cycles,output_json)
 
-
 def main():
 
     # Software description
@@ -98,7 +109,6 @@ def main():
 
 
     # Parameters for basic checking of the graph
-    
     parser_check.set_defaults(func=check)
     parser_check.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants_from_spansplit",required=True) # Variant calls in bedpe format (like from Sniffles)
     parser_check.add_argument("--nodes",help="nodes file from running spansplit.py",dest="nodes_from_spansplit",required=True)
@@ -118,14 +128,16 @@ def main():
     parser_parsimony.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants_from_spansplit",required=True) # Variant calls in bedpe format (like from Sniffles)
     parser_parsimony.add_argument("--nodes",help="nodes file from running spansplit.py",dest="nodes_from_spansplit",required=True)
     parser_parsimony.add_argument("--out",help="prefix for all output files",dest="output_prefix",required=True)
-    parser_parsimony.add_argument("--chrom",help="which chromosome to focus historical reconstruction on",dest="zoom_region_chrom",required=True)
+    parser_parsimony.add_argument("--chrom",help="which chromosome to focus historical reconstruction on",dest="zoom_region_chrom",type=str,required=True)
+    parser_parsimony.add_argument("--start",help="which start position within the chromosome to focus historical reconstruction on",dest="zoom_region_start",type=int,required=True)
+    parser_parsimony.add_argument("--end",help="which end position within the chromosome to focus historical reconstruction on",dest="zoom_region_end",type=int,required=True)
     parser_parsimony.set_defaults(func=parsimony)
 
     #  Parameters for "cycles" program: cycle detection outputting paths
     parser_cycles.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants_from_spansplit",required=True) # Variant calls in bedpe format (like from Sniffles)
     parser_cycles.add_argument("--nodes",help="nodes file from running spansplit.py",dest="nodes_from_spansplit",required=True)
     parser_cycles.add_argument("--out",help="prefix for all output files",dest="output_prefix",required=True)
-    parser_cycles.add_argument("--depth_limit",help="Number of edges deep to search in the graph. Influences runtime",type=int,dest="depth_limit",default=8)
+    parser_cycles.add_argument("--depth_limit",help="Number of edges deep to search in the graph. Influences runtime",type=int,dest="depth_limit",default=20)
     parser_cycles.set_defaults(func=cycles)
     
 

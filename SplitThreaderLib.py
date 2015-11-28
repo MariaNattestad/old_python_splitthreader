@@ -709,8 +709,8 @@ class Graph(object):
 
     def karyotype_from_parsimony(self,recordings,output_filename):
         record_counter = 1
-        f_karyotype=open(output_filename + ".karyotype",'w')
-        f_records = open(output_filename + ".parsimony",'w')
+        f_karyotype=open(output_filename + ".karyotype.txt",'w')
+        f_records = open(output_filename + ".parsimony.txt",'w')
         for record in recordings:
             path = record[0]
             previous_chromosome = "0"
@@ -964,6 +964,61 @@ class Graph(object):
 
         return paths_used
 
+    def subgraph_from_genome_interval(self,chromosome,start,end):
+        nodes = self.nodes_within_genome_interval(chromosome,start,end)
+        s = self.subgraph_from_nodes(nodes)
+        return s
+
+    def nodes_within_genome_interval(self,chromosome,start,end):
+        matching_nodes = []
+        for node_name in self.nodes:
+            if chromosome == self.nodes[node_name].attributes["chrom"]:
+                # If at least one end of the node is within the interval
+                if (self.nodes[node_name].attributes["start"] > start and self.nodes[node_name].attributes["start"] < end) or \
+                (self.nodes[node_name].attributes["stop"] > start and self.nodes[node_name].attributes["stop"] < end): 
+                    matching_nodes.append(node_name)
+        
+        if len(matching_nodes) == 0:
+            raise FileFormatError("No nodes match the point")
+
+        # Returns node names
+        return matching_nodes
+
+    def subgraph_from_nodes(self,node_names): 
+        # Adds the nodes given along with all their first-degree nodes and the edges in between
+
+        s = Graph() # s as in subgraph
+
+        node_attributes = {}
+        edges_to_add = {}
+        for node_name in node_names:
+            # Copy the node itself
+            node_attributes[node_name] = self.nodes[node_name].attributes
+            # Find all the first-degree nodes and their edges
+            for key in self.nodes[node_name].ports:
+                edges = self.nodes[node_name].ports[key].edges
+                for other_port in edges:
+                    edge = edges[other_port]
+                    # Grab the node on the other side
+                    node_attributes[other_port.node.name] = other_port.node.attributes
+                    # Create a dictionary of edges to avoid using the same multiple times
+                    edges_to_add[str(edge)] = edge
+        
+        # Add nodes to the graph
+        s.create_nodes_with_attributes(node_attributes)
+
+        # Add edges to the graph
+        for edge_name in edges_to_add:
+            edge = edges_to_add[edge_name]
+            node1 = edge.ports[0].node.name
+            port1 = edge.ports[0].name
+            node2 = edge.ports[1].node.name
+            port2 = edge.ports[1].name
+            weight = edge.weight
+            spansplit = edge.spansplit
+            s.create_edge(node1,port1,node2,port2,weight,spansplit=spansplit)
+
+        return s
 
     def parsimony(self,use_breadth_first_search=False,portal_name="Portal",verbose=True,depth_limit=20,cycle_limit=2,min_weight_required = 5):
         import time
