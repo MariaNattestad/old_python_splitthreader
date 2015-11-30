@@ -121,6 +121,7 @@ class Graph(object):
         self.edges = [] # list of Edge objects
         self.node_lookup = {} # key: (chrom, pos, strand) tuple; #value: node_name
         self.annotation = {}
+        self.annotation_by_node = {}
 
     def __str__(self):
         return ", ".join(self.nodes.keys())
@@ -177,8 +178,11 @@ class Graph(object):
             self.nodes[node2].ports[port2].edges[self.nodes[node1].ports[port1]] = e
 
 
-    def create_3_edges(self,key1,key2,weight_split,weight_span1,weight_span2):
-        
+    def create_3_edges(self,key1,key2,weight_split,weight_span1,weight_span2,verbose=False):
+        # if key1==key2:
+        #     verbose = True
+
+
         port1 = ""
         if key1[2] == "+":
             port1 = "stop"
@@ -208,7 +212,9 @@ class Graph(object):
             print self.node_lookup
             raise FileFormatError("node in spansplit file doesn't exist in spansplit.nodes file")
         self.create_edge(node1,port1,node2,port2,weight_split,spansplit="split")
-
+        if verbose==True:
+            print "nodes:", node1, node2
+            
         # print "=================================================================="
         # print "Split:"
         # print key1,key2
@@ -227,17 +233,19 @@ class Graph(object):
         
         self.create_edge(node1,port1,rev_node1,rev_port1,weight_span1,spansplit="span")
 
-        # span 2
-        rev_key2 = (key2[0],key2[1],reverse(key2[2]))
-        rev_node2 = self.node_lookup.get(rev_key2, "NA")
-        rev_port2 = reverse(port2)
-
-        # print "Span 1:"
-        # print key2, rev_key2
-        # print node2, port2
-        # print rev_node2, rev_port2
         
-        self.create_edge(node2,port2,rev_node2,rev_port2,weight_span2,spansplit="span")
+        if key1 != key2:
+            # span 2
+            rev_key2 = (key2[0],key2[1],reverse(key2[2]))
+            rev_node2 = self.node_lookup.get(rev_key2, "NA")
+            rev_port2 = reverse(port2)
+
+            # print "Span 1:"
+            # print key2, rev_key2
+            # print node2, port2
+            # print rev_node2, rev_port2
+            
+            self.create_edge(node2,port2,rev_node2,rev_port2,weight_span2,spansplit="span")
 
 
 
@@ -305,7 +313,7 @@ class Graph(object):
             weight_split = float(fields[11])
             weight_span1 = float(fields[13])
             weight_span2 = float(fields[16])
-            
+
 
             key1 = (chrom1,pos1,strand1)
             key2 = (chrom2,pos2,strand2)
@@ -529,7 +537,13 @@ class Graph(object):
                 shortest_path = all_connections[i]
         return shortest_path,min_distance
 
-    def path_sequence_length(self,path):
+    def find_path_total_lengths(self,allpaths):
+        total_lengths = []
+        for path in allpaths:
+            total_lengths.append(self.find_total_length(path))
+        return total_lengths
+
+    def find_total_length(self,path):
         distance = 0
         for item in path:
             intermediate_node = self.port_from_path_item(item).node
@@ -569,13 +583,24 @@ class Graph(object):
                 chrom = chrom.split("chr")[1]
             start = float(fields[1])
             stop = float(fields[2])
-            name = fields[name_field-1]
+            gene_name = fields[name_field-1]
             strand = fields[strand_field-1]
-            self.annotation[name] = {"chrom":chrom,"start":start,"stop":stop,"strand":strand}
+            self.annotation[gene_name] = {"chrom":chrom,"start":start,"stop":stop,"strand":strand}
+            # get names of all nodes that are between these two points
+            all_nodes_on_gene = self.nodes_within_genome_interval(chrom,start,stop)
+            for node_name in all_nodes_on_gene:
+                self.annotation_by_node[node_name] = self.annotation_by_node.get(node_name,[]) + [gene_name]
             # c+=1
             # if c > 1000:
             #     break
         f.close()
+
+    def genes_on_path(self,path):
+        genes = []
+        for item in path:
+            node_name = self.port_from_path_item(item).node.name
+            genes = genes + self.annotation_by_node.get(node_name,[])
+        return list(set(genes))
 
     def gene_fusion_distance(self,gene_name1,gene_name2,depth_limit,verbose=False):
         annot1 = self.annotation.get(gene_name1)
@@ -711,8 +736,10 @@ class Graph(object):
         record_counter = 1
         f_karyotype=open(output_filename + ".karyotype.txt",'w')
         f_records = open(output_filename + ".parsimony.txt",'w')
+        allpaths = []
         for record in recordings:
             path = record[0]
+            allpaths.append(path[1:-1])
             previous_chromosome = "0"
             chrom_length = 0
             f_records.write("%d" % (record_counter))
@@ -736,8 +763,9 @@ class Graph(object):
 
         f_karyotype.close()
         f_records.close()
+        self.franken_paths(allpaths,output_filename + ".paths.bed")
 
-        
+    ################# Still works but no longer used by Parsimony or in any command-line program ############################
     def find_longest_path(self,use_breadth_first_search=False,depth_limit=50,portal_name="Portal",required_minimum_edge_weight=1,cycle_limit=2):
         # Two methods for finding all the paths:
         allpaths = []
@@ -776,36 +804,37 @@ class Graph(object):
                 position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
         return longest_uninterrupted_path_so_far,longest_uninterrupted_length_so_far
 
-    def find_path_lengths(self,allpaths):
+    def find_intact_length(self,path):
+        longest_uninterrupted_length_so_far = 0
+        current_uninterrupted_length = 0
+        current_chromosome = ""
+        position_where_we_left_off = 0
+        for item in path:
+            node,port = item.split(":")
+            # print "Stop:",self.nodes[node].attributes["stop"]
+            # print "Start:",self.nodes[node].attributes["start"]
+            # # Attributes: # {"chrom":fields[0],"start":int(fields[1]),"stop":int(fields[2]),"x":int(fields[1]),"y":y}
+            seq_length = self.nodes[node].attributes["stop"]-self.nodes[node].attributes["start"]
+            this_chromosome = self.nodes[node].attributes["chrom"]
+            this_position = self.nodes[node].attributes[reverse(port)] # port refers to after the jump, so we reverse that to get the entry point into this node
+            if this_chromosome == current_chromosome and this_position == position_where_we_left_off: 
+                current_uninterrupted_length += seq_length
+            else:
+                # Save if this path is the best so far
+                if current_uninterrupted_length > longest_uninterrupted_length_so_far:
+                    longest_uninterrupted_length_so_far = current_uninterrupted_length
+                    # longest_uninterrupted_path_so_far = path
+                # Reset chromosome and length
+                current_uninterrupted_length = seq_length
+                current_chromosome = this_chromosome
+            position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
+        return longest_uninterrupted_length_so_far
+
+    def find_path_intact_lengths(self,allpaths):
         intact_lengths = []
-
         for path in allpaths:
-            longest_uninterrupted_length_so_far = 0
-            current_uninterrupted_length = 0
-            current_chromosome = ""
-            position_where_we_left_off = 0
-            for item in path:
-                node,port = item.split(":")
-                # print "Stop:",self.nodes[node].attributes["stop"]
-                # print "Start:",self.nodes[node].attributes["start"]
-                # # Attributes: # {"chrom":fields[0],"start":int(fields[1]),"stop":int(fields[2]),"x":int(fields[1]),"y":y}
-                seq_length = self.nodes[node].attributes["stop"]-self.nodes[node].attributes["start"]
-                this_chromosome = self.nodes[node].attributes["chrom"]
-                this_position = self.nodes[node].attributes[reverse(port)] # port refers to after the jump, so we reverse that to get the entry point into this node
-                if this_chromosome == current_chromosome and this_position == position_where_we_left_off: 
-                    current_uninterrupted_length += seq_length
-                else:
-                    # Save if this path is the best so far
-                    if current_uninterrupted_length > longest_uninterrupted_length_so_far:
-                        longest_uninterrupted_length_so_far = current_uninterrupted_length
-                        # longest_uninterrupted_path_so_far = path
-                    # Reset chromosome and length
-                    current_uninterrupted_length = seq_length
-                    current_chromosome = this_chromosome
-                position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
-            intact_lengths.append(longest_uninterrupted_length_so_far)
+            intact_lengths.append(self.find_intact_length(path))
         return intact_lengths
-
 
     def subtract(self,path,weight):
         edges = self.edges_from_path(path)
@@ -973,19 +1002,39 @@ class Graph(object):
         matching_nodes = []
         for node_name in self.nodes:
             if chromosome == self.nodes[node_name].attributes["chrom"]:
-                # If at least one end of the node is within the interval
+                # If at least one end of the node is within the interval (1 and 2) or the node encompasses the interval entirely (3)
                 if (self.nodes[node_name].attributes["start"] > start and self.nodes[node_name].attributes["start"] < end) or \
-                (self.nodes[node_name].attributes["stop"] > start and self.nodes[node_name].attributes["stop"] < end): 
+                (self.nodes[node_name].attributes["stop"] > start and self.nodes[node_name].attributes["stop"] < end) or \
+                (self.nodes[node_name].attributes["start"] < start and self.nodes[node_name].attributes["stop"] > end): 
                     matching_nodes.append(node_name)
         
-        if len(matching_nodes) == 0:
-            raise FileFormatError("No nodes match the point")
+        # if len(matching_nodes) == 0:
+            # print "Warning: No node matches: ",chromosome, ":",start,"-",end
+            # raise FileFormatError("No nodes match the point")
+
 
         # Returns node names
         return matching_nodes
 
-    def subgraph_from_nodes(self,node_names): 
+    def first_degree_nodes(self,node_names):
+        first_degree_nodes = node_names + []
+        for node_name in node_names:
+            node = self.nodes[node_name]
+            for port_name in self.nodes[node_name].ports:
+                edges = self.nodes[node_name].ports[port_name].edges
+                for other_port in edges:
+                    first_degree_nodes.append(other_port.node.name)
+
+        return list(set(first_degree_nodes))
+
+
+    def subgraph_from_nodes(self,node_names_given,degree_given=2): 
         # Adds the nodes given along with all their first-degree nodes and the edges in between
+        node_names = node_names_given + []
+        degree = degree_given - 1 # the process later goes one degree out already, so only add degrees here if above 1
+
+        for i in xrange(degree):
+            node_names = self.first_degree_nodes(node_names)
 
         s = Graph() # s as in subgraph
 
@@ -995,8 +1044,8 @@ class Graph(object):
             # Copy the node itself
             node_attributes[node_name] = self.nodes[node_name].attributes
             # Find all the first-degree nodes and their edges
-            for key in self.nodes[node_name].ports:
-                edges = self.nodes[node_name].ports[key].edges
+            for port_name in self.nodes[node_name].ports:
+                edges = self.nodes[node_name].ports[port_name].edges
                 for other_port in edges:
                     edge = edges[other_port]
                     # Grab the node on the other side
@@ -1020,7 +1069,7 @@ class Graph(object):
 
         return s
 
-    def parsimony(self,use_breadth_first_search=False,portal_name="Portal",verbose=True,depth_limit=20,cycle_limit=2,min_weight_required = 5):
+    def parsimony(self,use_breadth_first_search=False,portal_name="Portal",verbose=True,depth_limit=20,cycle_limit=0,min_weight_required = 10):
         import time
         self.add_portal()
         # recording = []
@@ -1031,57 +1080,61 @@ class Graph(object):
             print "DFS:  %.2f seconds" % (time.time()-before)
             print "Number of paths", len(allpaths)
         
-        before = time.time()
-        lengths = self.find_path_lengths(allpaths)
-        if verbose==True: print "Intact length finding:  %.2f seconds" % (time.time()-before)
+        # before = time.time()
+        # # lengths = self.find_path_lengths(allpaths)
+        # if verbose==True: print "Intact length finding:  %.2f seconds" % (time.time()-before)
 
-        import numpy as np
-        lengths = np.array(lengths)
-        indices = np.argsort(lengths)[::-1]
-        before = time.time()
+        # import numpy as np
+        # lengths = np.array(lengths)
+        # indices = np.argsort(lengths)[::-1]
+        # before = time.time()
         
-        if verbose==True: print "Sorting lengths:  %.2f seconds" % (time.time()-before)
+        # if verbose==True: print "Sorting lengths:  %.2f seconds" % (time.time()-before)
+        ########## TESTING ######################
+        intact_lengths = self.find_path_intact_lengths(allpaths)
+        total_lengths = self.find_path_total_lengths(allpaths)
+        both_lengths = []
+        for i in xrange(len(allpaths)):
+            both_lengths.append((i,intact_lengths[i],total_lengths[i]))
+        
+        # print both_lengths
+        import operator
+        ordering = sorted(both_lengths,key=operator.itemgetter(1,2))[::-1]
 
+        #########################################
         recordings = []
-        for i in xrange(len(indices)): 
-            index = indices[i]
+        # for i in xrange(len(indices)): 
+        for item in ordering:
+            index = item[0]
+            # index = indices[i]
             path = allpaths[index]
             weight = self.min_weight(path)
+            # print weight,item, path
             if weight < min_weight_required:
                 continue
             else:
-                recordings.append([path,lengths[index],weight])
+                recordings.append([path,intact_lengths[index],weight])
                 self.subtract(path=path,weight=weight)
 
         return recordings
 
-    def franken_path(self,path,output_filename = None):
-        print "Franken-path:"
-        print path
-        counter = 1
-        output = ""
-        for item in path:
-            node_name,port = item.split(":")
-            node = self.nodes[node_name]
-            strand = "+"
-            if port == "start":
-                strand = "-"
-            output += "%s\t%d\t%d\t%03d\t0\t%s\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],counter, strand) 
-            # output += "%03d\t%s:%d-%d\t%s\n" % (counter, node.attributes["chrom"],node.attributes["start"], node.attributes["stop"], strand)
-            counter += 1
-        if output_filename == None:
-            print output
-        else:
-            f=open(output_filename,"w")
-            f.write(output)
-            f.close()
-            print "bedtools getfasta -s -fi $REFERENCE -bed %s -fo %s.fasta" % (output_filename,output_filename)
-        # print "bedtools getfasta -s -fi $REFERENCE -bed $FILE -fo $FILE.fasta"
-
-
-
-
-
+    def franken_paths(self,paths,output_filename):
+        # print "Franken-path:"
+        # print path
+        path_counter = 1
+        f=open(output_filename,"w")
+        for path in paths:
+            for item in path:
+                node_name,port = item.split(":")
+                node = self.nodes[node_name]
+                strand = "+"
+                if port == "start":
+                    strand = "-"
+                f.write("%s\t%d\t%d\tpath_%03d\t0\t%s\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],path_counter, strand))
+            path_counter += 1      
+        f.close()
+        # print "bedtools getfasta -s -fi $REFERENCE -bed %s -fo %s.fasta" % (output_filename,output_filename)
+        
 
 
 

@@ -3,11 +3,13 @@ import argparse
 import numpy as np
 
 def run(args):
+    print "running"
     interval_size = args.slop
 
     bedpe_file = args.bedpe  
     reads_file = args.reads  
     output_file = args.out + ".spansplit.bedpe"
+    slop = args.slop
 
     mapping_quality = args.mq
     number_of_bed_file_columns = args.offset
@@ -43,7 +45,7 @@ def run(args):
             variantchrom = neat[number_of_bed_file_columns]
             variantstart = int(neat[number_of_bed_file_columns+1])
             variantstop = int(neat[number_of_bed_file_columns+2])
-            variantID = int(neat[number_of_bed_file_columns+3])
+            variantID = neat[number_of_bed_file_columns+3]
             side = int(neat[number_of_bed_file_columns+4])
             if side == 1:
                 readnames_1[variantID] = readnames_1.get(variantID,set()).union(set([readname]))
@@ -88,7 +90,7 @@ def run(args):
         # readnames on the right:
         reads2 = readnames_2.get(variantID,set())
         # readnames occurring on both sides
-        num_split = len(reads1.intersection(reads2))
+        num_split = len(reads1.intersection(reads2)) 
         ##  first side of the translocation
         key1 = (variantID,1)
         left1 = left_dict.get(key1,0)
@@ -99,43 +101,78 @@ def run(args):
         left2 = left_dict.get(key2,0)
         span2 = span_dict.get(key2,0)
         right2 = right_dict.get(key2,0)
-        line_except_split_count = "\t".join(line.strip().split()[:-1])
-        fout.write(line_except_split_count+"\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n" % (num_split,left1,span1,right1,left2,span2,right2))
+        original_line = "\t".join(line.strip().split()[0:11]) # excluding number of split reads
+
+        # Check if inverted duplication (reads loop back onto themselves at this breakpoint):
+        chrom1 = neat[0]
+        pos1 = int(neat[1]) # beginning of the interval 
+        other_pos1 = int(neat[2]) # end of the first breakpoint interval
+
+        chrom2 = neat[3]
+        pos2 = int(neat[4]) # beginning of the interval 
+        other_pos2 = int(neat[5]) # end of the second breakpoint interval
+
+
+        if chrom1==chrom2 and (abs(other_pos1-pos2) < slop or abs(other_pos2-pos1) < slop):
+            pos1 = min([pos1,pos2])
+            pos2 = pos1
+            other_pos1 = max([other_pos1,other_pos2])
+            other_pos2 = other_pos1
+            original_line = "%s\t%d\t%d\t%s\t%d\t%d\t%s" % (chrom1,pos1,other_pos1,chrom2,pos2,other_pos2,"\t".join(neat[6:11]))
+            num_split = int(neat[11])
+            # print "Inverted duplication:",original_line
+        elif chrom1==chrom2 and (abs(other_pos1-pos2) < 100000 or abs(other_pos2-pos1) < 100000): # if positions are within 100 kb they may share reads naturally
+            num_split = int(neat[11])
+        
+        fout.write(original_line+"\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n" % (num_split,left1,span1,right1,left2,span2,right2))
     #   chrom1 start1 stop1   chrom2 start2 stop2  variantID score strand1 strand2 typeOfSV numreads left1 span1 right1 left2 span2 right2
 
     f.close()
     fout.close()
+
     nodes(args)
 
     
 def nodes(args):
+    bedpe_file = args.out + ".spansplit.bedpe"
+    output_file = args.out + ".spansplit.nodes.bed"
+
     small_chromosomes_only = args.filter
     chromosome_lengths_file = args.genome_file
+    slop = args.slop
     chromosome_lengths = {}
+
     f=open(chromosome_lengths_file)
     for line in f:
         fields = line.strip().split()
         chromosome_lengths[fields[0]] = int(fields[1])
 
-    bedpe_file = args.bedpe 
-    output_file = args.out + ".spansplit.nodes.bed" 
-
+    
     ############################# cut the chromosomes at each breakpoint to make nodes ################################
     f=open(bedpe_file)
     breakpoints = {}
     # dictionary with an entry for each chromosome, each is a list of positions where the breakpoints are
     for line in f:
         neat = line.strip().split()
-        variantID = int(neat[6])
+        # variantID = neat[6]
         chrom1 = neat[0]
-        pos1 = int(neat[1])
+        pos1 = int(neat[1]) # beginning of the interval becomes the official breakpoint (for cutting nodes apart)
         chrom2 = neat[3]
-        pos2 = int(neat[4])
+        pos2 = int(neat[4]) # beginning of the interval becomes the official breakpoint (for cutting nodes apart)
         # filter out any breakpoints to or from the alternate chromosomes, patches, etc.
-        if (len(neat[0]) < 6 and len(neat[3]) < 6) or small_chromosomes_only:  
+        if (len(chrom1) < 6 and len(chrom2) < 6) or not small_chromosomes_only:  
+            # check if this is an in-place variant like an inverted duplication where the breakpoints are within SLOP of each other 
+            # and should therefore be considered a single breakpoint
+            # other_pos1 = int(neat[2]) # end of the first breakpoint interval
+            # other_pos2 = int(neat[5]) # end of the second breakpoint interval
+            # if chrom1==chrom2 and (abs(other_pos1-pos2) < slop or abs(other_pos2-pos1) < slop):
+            #     # record only one breakpoint in the dictionary
+            #     breakpoints[chrom1] = breakpoints.get(chrom1,[])+[pos1]
+            # else:
+
             # record both breakpoints in the dictionary
-            breakpoints[chrom1] = breakpoints.get(chrom1,[])+[int(pos1)]
-            breakpoints[chrom2] = breakpoints.get(chrom2,[])+[int(pos2)]
+            breakpoints[chrom1] = breakpoints.get(chrom1,[])+[pos1]
+            breakpoints[chrom2] = breakpoints.get(chrom2,[])+[pos2]
     # output summary statistics on the breakpoints in each chromosome
     print "Chromosomes: %d" % len(breakpoints)
     print "Number of breakpoints in each chromosome:"
