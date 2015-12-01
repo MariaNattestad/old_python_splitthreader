@@ -444,12 +444,17 @@ class Graph(object):
         
         # self.print_edges()
 
-    def edges_from_path(self,path):
+    def edges_from_path(self,path,split_edges_only = False):
         second_port = self.port_from_path_item(path[0])
         edge_list = []
         for item in path[1:]:
             first_port = self.opposite_port_from_path_item(item)
-            edge_list.append(second_port.edges[first_port])
+            this_edge = second_port.edges[first_port]
+            if split_edges_only == True:
+                if this_edge.spansplit == "split":
+                    edge_list.append(this_edge)
+            else:
+                edge_list.append(this_edge)
             second_port = self.port_from_path_item(item)
         return edge_list
 
@@ -485,8 +490,10 @@ class Graph(object):
                 if pos1 > self.nodes[node_name].attributes["start"] and pos1 <= self.nodes[node_name].attributes["stop"]: 
                     matching_nodes.append(node_name)
         if len(matching_nodes) > 1:
+            print point1
             raise FileFormatError("More than one node contains the point")
         if len(matching_nodes) == 0:
+            print point1
             raise FileFormatError("No nodes match the point")
         return matching_nodes[0]
 
@@ -561,39 +568,48 @@ class Graph(object):
             for item in path[1:-1]:
                 intermediate_node = self.port_from_path_item(item).node
                 distance += intermediate_node.attributes["stop"] - intermediate_node.attributes["start"]
-            # print "Intermediate nodes:", distance
-            # print "First node:", node1.attributes["stop"]-pos1
-            # print "Last node:", pos2 - node2.attributes["start"]
             distance += abs(node1.attributes[reverse(node1_start_port)]-pos1)
             distance += abs(pos2 - node2.attributes[reverse(node2_end_port)])
             distances.append(distance)
-            
             # print node1.attributes["stop"]
             # total length of intermediate nodes + partial lengths of first and last nodes
         return allpaths,distances
 
 
-    def read_annotation(self,annotation_file,remove_chr=True,name_field=4,strand_field=6):
+    def read_annotation(self,annotation_file,name_field=4,strand_field=6,by_node_access = False):
+        # It takes much longer to index all the genes by which nodes contain them, so by_node_access is turned off by default. It is useful to turn on when you want to see all the genes in a given path, region, or cycle
         f = open(annotation_file)
-        # c = 0
+        counter = 0
+        successes = 0
         for line in f:
             fields = line.strip().split()
             chrom = fields[0]
-            if remove_chr:
-                chrom = chrom.split("chr")[1]
             start = float(fields[1])
             stop = float(fields[2])
             gene_name = fields[name_field-1]
             strand = fields[strand_field-1]
             self.annotation[gene_name] = {"chrom":chrom,"start":start,"stop":stop,"strand":strand}
-            # get names of all nodes that are between these two points
-            all_nodes_on_gene = self.nodes_within_genome_interval(chrom,start,stop)
-            for node_name in all_nodes_on_gene:
-                self.annotation_by_node[node_name] = self.annotation_by_node.get(node_name,[]) + [gene_name]
-            # c+=1
-            # if c > 1000:
-            #     break
+            if by_node_access == True:
+                # get names of all nodes that are between these two points
+                all_nodes_on_gene = self.nodes_within_genome_interval(chrom,start,stop)
+                if len(all_nodes_on_gene) > 0:
+                    successes += 1
+                for node_name in all_nodes_on_gene:
+                    self.annotation_by_node[node_name] = self.annotation_by_node.get(node_name,[]) + [gene_name]
+            counter += 1
         f.close()
+
+        print "Reading annotation: %.1f %% of genes placed successfully" % (successes*100./counter)
+        
+        if successes*100./counter < 20:
+            print "Check whether the chromosome names in the annotation file matches the variants and nodes files."
+
+
+    def node_names_from_path(self,path):
+        node_names = []
+        for item in path:
+            node_names.append(self.port_from_path_item(item).node.name)
+        return node_names
 
     def genes_on_path(self,path):
         genes = []
@@ -645,8 +661,8 @@ class Graph(object):
                             #         if distances[i] < min_distance:
                             #             min_distance = distances[i]
                             #             path = paths[i]
-                            for i in xrange(len(distances)):
-                                reports.append({"Gene1_direction":direction_gene1, "Gene2_direction":direction_gene2, "path":paths[i],"distance":distances[i]})
+                            for i in xrange(len(paths)):
+                                reports.append({"Gene1":gene_name1,"Gene2":gene_name2, "Gene1_direction":direction_gene1, "Gene2_direction":direction_gene2, "path":paths[i],"distance":distances[i]})
         return reports
 
     def count_splits_in_path(self,path):
@@ -707,6 +723,8 @@ class Graph(object):
                     score = 70
                 elif report["Gene1_direction"] == report["Gene2_direction"] and num_splits==2 and report["distance"]<1000000:
                     score = 50
+                elif num_splits==2 and report["distance"]<1000000:
+                    score = 40
                 else:
                     score = 20
                 if report["distance"] < 1000000:
@@ -733,37 +751,50 @@ class Graph(object):
 
 
     def karyotype_from_parsimony(self,recordings,output_filename):
-        record_counter = 1
-        f_karyotype=open(output_filename + ".karyotype.txt",'w')
-        f_records = open(output_filename + ".parsimony.txt",'w')
+        # record_counter = 1
+        # f_karyotype=open(output_filename + ".karyotype.txt",'w')
+        # f_records = open(output_filename + ".parsimony.txt",'w')
         allpaths = []
+        path_counter = 1
+        f_bed = open(output_filename + ".paths.bed",'w')
+        f_bed.write("chromosome\tstart\tend\tpath_ID\ttotal_length\tstrand\tminimum_read_depth_on_breakpoints\tlongest_intact_sequence_length\n")
         for record in recordings:
-            path = record[0]
-            allpaths.append(path[1:-1])
-            previous_chromosome = "0"
-            chrom_length = 0
-            f_records.write("%d" % (record_counter))
+            path = record[0][1:-1] # Cut off Portal nodes on either side of the path
+            minweight = record[2]
+            longest_intact_length = record[1]
+            total_length = self.find_total_length(path)
+            # previous_chromosome = "0"
+            # chrom_length = 0
+            # f_records.write("path_%03d" % (record_counter))
             for item in path:
-                node,port = item.split(":")
-                this_chromosome = self.nodes[node].attributes["chrom"]
-                if node != "Portal":
-                    f_records.write("\t%s:%d-%d;%s" % (this_chromosome,self.nodes[node].attributes["start"],self.nodes[node].attributes["stop"], "Forward" if port == "stop" else "Reverse"))
-                    # f_records.write("\t%s" % (item))
-                node_length = self.nodes[node].attributes["stop"]-self.nodes[node].attributes["start"]
-                if this_chromosome == previous_chromosome:
-                    chrom_length += node_length
-                else:
-                    if previous_chromosome != "0":
-                        f_karyotype.write("%d\t%s\t%d\t%.2f\n" % (record_counter,previous_chromosome,chrom_length,record[2]))
-                        # f_karyotype.write("path_"+str(record_counter)+"\t"+previous_chromosome + "\t" + str(chrom_length) + "\n")
-                    previous_chromosome = this_chromosome
-                    chrom_length = node_length
-            f_records.write("\n")
-            record_counter += 1
+                node_name,port = item.split(":")
+                node = self.nodes[node_name]
+                strand = "+"
+                if port == "start":
+                    strand = "-"
+                f_bed.write("%s\t%d\t%d\tpath_%03d\t%d\t%s\t%d\t%d\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],path_counter, total_length, strand,minweight,longest_intact_length))
+            path_counter += 1
 
-        f_karyotype.close()
-        f_records.close()
-        self.franken_paths(allpaths,output_filename + ".paths.bed")
+            #     node,port = item.split(":")
+            #     this_chromosome = self.nodes[node].attributes["chrom"]
+            #     if node != "Portal":
+            #         f_records.write("\t%s:%d-%d;%s" % (this_chromosome,self.nodes[node].attributes["start"],self.nodes[node].attributes["stop"], "Forward" if port == "stop" else "Reverse"))
+            #         # f_records.write("\t%s" % (item))
+            #     node_length = self.nodes[node].attributes["stop"]-self.nodes[node].attributes["start"]
+            #     if this_chromosome == previous_chromosome:
+            #         chrom_length += node_length
+            #     else:
+            #         if previous_chromosome != "0":
+            #             f_karyotype.write("path_%03d\t%s\t%d\t%.2f\n" % (record_counter,previous_chromosome,chrom_length,record[2]))
+            #             # f_karyotype.write("path_"+str(record_counter)+"\t"+previous_chromosome + "\t" + str(chrom_length) + "\n")
+            #         previous_chromosome = this_chromosome
+            #         chrom_length = node_length
+            # f_records.write("\n")
+            # record_counter += 1
+
+        # f_karyotype.close()
+        # f_records.close()
+        f_bed.close()
 
     ################# Still works but no longer used by Parsimony or in any command-line program ############################
     def find_longest_path(self,use_breadth_first_search=False,depth_limit=50,portal_name="Portal",required_minimum_edge_weight=1,cycle_limit=2):
@@ -958,8 +989,6 @@ class Graph(object):
                 else: # keep recursing
                     self.cycle_depth_first_search_recurse(current_port=glide_port, destination_port=destination_port, cycles_found=cycles_found, path_so_far=path_so_far+[saveport],depth_limit=depth_limit,depth=depth+1) # new
 
-
-
     def find_cycles(self,depth_limit=20):
         portal_name="Portal"
         self.add_portal()
@@ -974,22 +1003,40 @@ class Graph(object):
 
         return self.collapse_redundant_paths(cycles_only)
 
-    def collapse_redundant_paths(self,paths):
+    def collapse_redundant_paths(self,paths,split_edges_only = False,names = None):
         paths_used = []
         edge_lists_used = []
+        names_used = []
+        if names != None and len(names)!=len(paths):
+            print "To label the paths with names, the length of names (list) must be the same as the length of paths (list)"
+            return None
+
+        i = 0
         for path in paths:
-            edge_list = set(self.edges_from_path(path))
+            edge_list = set(self.edges_from_path(path,split_edges_only=split_edges_only))
             if paths_used == []:
                 paths_used.append(path)
                 edge_lists_used.append(edge_list)
+                if names != None:
+                    names_used.append(names[i])
+                    print names[i]
             else:
                 redundant = False
-                for previous_edge_list in edge_lists_used:
+                for j in xrange(len(edge_lists_used)):
+                    previous_edge_list = edge_lists_used[j]
                     if edge_list == previous_edge_list:
                         redundant = True
+                        if names != None:
+                            # print names_used[j], "<----", names[i], "\t(same path, possibly overlapping genes)"
+                            print "\t%s\t(same fusion path as %s)" % (names[i], names_used[j])
+                        break
                 if redundant == False:
                     paths_used.append(path)
                     edge_lists_used.append(edge_list)
+                    if names != None:
+                        names_used.append(names[i])
+                        print names[i]
+            i += 1
 
         return paths_used
 
@@ -1069,7 +1116,7 @@ class Graph(object):
 
         return s
 
-    def parsimony(self,use_breadth_first_search=False,portal_name="Portal",verbose=True,depth_limit=20,cycle_limit=0,min_weight_required = 10):
+    def parsimony(self,use_breadth_first_search=False,portal_name="Portal",verbose=False,depth_limit=20,cycle_limit=0,min_weight_required = 10):
         import time
         self.add_portal()
         # recording = []
@@ -1118,23 +1165,58 @@ class Graph(object):
 
         return recordings
 
-    def franken_paths(self,paths,output_filename):
+    def franken_paths(self,paths,output_filename,header = True):
         # print "Franken-path:"
         # print path
         path_counter = 1
         f=open(output_filename,"w")
+        if header == True:
+            f.write("chromosome\tstart\tend\tpath_ID\ttotal_length_of_path\tstrand\n")
         for path in paths:
+            total_length = self.find_total_length(path)
+            # intact_length = self.find_intact_length(path)
             for item in path:
                 node_name,port = item.split(":")
                 node = self.nodes[node_name]
                 strand = "+"
                 if port == "start":
                     strand = "-"
-                f.write("%s\t%d\t%d\tpath_%03d\t0\t%s\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],path_counter, strand))
+                f.write("%s\t%d\t%d\tpath_%03d\t%d\t%s\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],path_counter, total_length, strand))
             path_counter += 1      
         f.close()
         # print "bedtools getfasta -s -fi $REFERENCE -bed %s -fo %s.fasta" % (output_filename,output_filename)
         
+    def local_parsimony(self,chromosome,start,end,output_prefix):
+        s = self.subgraph_from_genome_interval(chromosome,start,end)
+
+        print "Created subgraph of this region with %d nodes and %d edges\n" % (len(s.nodes),len(s.edges))
+        # s.to_json(output_prefix+".subgraph.json")
+        region_nodes = set(s.nodes_within_genome_interval(chromosome,start,end))
+
+        reports = s.parsimony(depth_limit = 30)
+
+        print "Beautiful art showing the paths in this region:"
+        filtered_reports = []
+        output = ""
+        for report in reports[::-1]:
+            path = report[0]
+            path_node_names = s.node_names_from_path(path)
+            if len(set(path_node_names).intersection(region_nodes)):
+                filtered_reports.append(report)
+                for node in region_nodes:
+                    if node in path_node_names:
+                        output += "======"
+                    else:
+                        output += "      "
+                # print report
+                output += "\n"
+        print output
+        filtered_reports = filtered_reports[::-1] # flip back around, to undo the ordering that is best for drawing, and return to the order that the paths were found in: longest intact sequence first
+
+        print "Found a parsimonious set of", len(filtered_reports), "paths."
+        
+        s.karyotype_from_parsimony(filtered_reports,output_filename=output_prefix)
+        print "Printed out the coordinates of the nodes in each path: %s" % (output_prefix + ".paths.bed")
 
 
 
