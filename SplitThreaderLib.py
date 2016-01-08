@@ -749,53 +749,6 @@ class Graph(object):
             return to_return
         # maybe put in a safety so genes that are already close to each other aren't reported as fusions unless the variants bring them closer so it's not read-through transcription
 
-
-    def karyotype_from_parsimony(self,recordings,output_filename):
-        # record_counter = 1
-        # f_karyotype=open(output_filename + ".karyotype.txt",'w')
-        # f_records = open(output_filename + ".parsimony.txt",'w')
-        allpaths = []
-        path_counter = 1
-        f_bed = open(output_filename + ".paths.bed",'w')
-        f_bed.write("chromosome\tstart\tend\tpath_ID\ttotal_length\tstrand\tminimum_read_depth_on_breakpoints\tlongest_intact_sequence_length\n")
-        for record in recordings:
-            path = record[0][1:-1] # Cut off Portal nodes on either side of the path
-            minweight = record[2]
-            longest_intact_length = record[1]
-            total_length = self.find_total_length(path)
-            # previous_chromosome = "0"
-            # chrom_length = 0
-            # f_records.write("path_%03d" % (record_counter))
-            for item in path:
-                node_name,port = item.split(":")
-                node = self.nodes[node_name]
-                strand = "+"
-                if port == "start":
-                    strand = "-"
-                f_bed.write("%s\t%d\t%d\tpath_%03d\t%d\t%s\t%d\t%d\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],path_counter, total_length, strand,minweight,longest_intact_length))
-            path_counter += 1
-
-            #     node,port = item.split(":")
-            #     this_chromosome = self.nodes[node].attributes["chrom"]
-            #     if node != "Portal":
-            #         f_records.write("\t%s:%d-%d;%s" % (this_chromosome,self.nodes[node].attributes["start"],self.nodes[node].attributes["stop"], "Forward" if port == "stop" else "Reverse"))
-            #         # f_records.write("\t%s" % (item))
-            #     node_length = self.nodes[node].attributes["stop"]-self.nodes[node].attributes["start"]
-            #     if this_chromosome == previous_chromosome:
-            #         chrom_length += node_length
-            #     else:
-            #         if previous_chromosome != "0":
-            #             f_karyotype.write("path_%03d\t%s\t%d\t%.2f\n" % (record_counter,previous_chromosome,chrom_length,record[2]))
-            #             # f_karyotype.write("path_"+str(record_counter)+"\t"+previous_chromosome + "\t" + str(chrom_length) + "\n")
-            #         previous_chromosome = this_chromosome
-            #         chrom_length = node_length
-            # f_records.write("\n")
-            # record_counter += 1
-
-        # f_karyotype.close()
-        # f_records.close()
-        f_bed.close()
-
     ################# Still works but no longer used by Parsimony or in any command-line program ############################
     def find_longest_path(self,use_breadth_first_search=False,depth_limit=50,portal_name="Portal",required_minimum_edge_weight=1,cycle_limit=2):
         # Two methods for finding all the paths:
@@ -1040,9 +993,9 @@ class Graph(object):
 
         return paths_used
 
-    def subgraph_from_genome_interval(self,chromosome,start,end):
+    def subgraph_from_genome_interval(self,chromosome,start,end,degree):
         nodes = self.nodes_within_genome_interval(chromosome,start,end)
-        s = self.subgraph_from_nodes(nodes)
+        s = self.subgraph_from_nodes(nodes,degree_given=degree)
         return s
 
     def nodes_within_genome_interval(self,chromosome,start,end):
@@ -1116,7 +1069,7 @@ class Graph(object):
 
         return s
 
-    def parsimony(self,use_breadth_first_search=False,portal_name="Portal",verbose=False,depth_limit=20,cycle_limit=0,min_weight_required = 10):
+    def parsimony(self,use_breadth_first_search=False,portal_name="Portal",verbose=False,depth_limit=20,cycle_limit=0,min_weight_required = 10,chop_end_nodes=0):
         import time
         self.add_portal()
         # recording = []
@@ -1127,17 +1080,12 @@ class Graph(object):
             print "DFS:  %.2f seconds" % (time.time()-before)
             print "Number of paths", len(allpaths)
         
-        # before = time.time()
-        # # lengths = self.find_path_lengths(allpaths)
-        # if verbose==True: print "Intact length finding:  %.2f seconds" % (time.time()-before)
+        # Chop off the end nodes on each path for the subgraph/local region case as these are inflated and can differentiate paths that are actually the same within the specific region
+        newpaths = []
+        for path in allpaths:
+            newpaths.append(path[chop_end_nodes:-chop_end_nodes])
+        allpaths = newpaths
 
-        # import numpy as np
-        # lengths = np.array(lengths)
-        # indices = np.argsort(lengths)[::-1]
-        # before = time.time()
-        
-        # if verbose==True: print "Sorting lengths:  %.2f seconds" % (time.time()-before)
-        ########## TESTING ######################
         intact_lengths = self.find_path_intact_lengths(allpaths)
         total_lengths = self.find_path_total_lengths(allpaths)
         both_lengths = []
@@ -1165,13 +1113,15 @@ class Graph(object):
 
         return recordings
 
-    def franken_paths(self,paths,output_filename,header = True):
+    def franken_paths(self,paths,output_filename,header = False):
         # print "Franken-path:"
         # print path
         path_counter = 1
         f=open(output_filename,"w")
         if header == True:
             f.write("chromosome\tstart\tend\tpath_ID\ttotal_length_of_path\tstrand\n")
+        else:
+            print "Header for bed file:\nchromosome\tstart\tend\tpath_ID\ttotal_length_of_path\tstrand\n"
         for path in paths:
             total_length = self.find_total_length(path)
             # intact_length = self.find_intact_length(path)
@@ -1184,16 +1134,16 @@ class Graph(object):
                 f.write("%s\t%d\t%d\tpath_%03d\t%d\t%s\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],path_counter, total_length, strand))
             path_counter += 1      
         f.close()
-        # print "bedtools getfasta -s -fi $REFERENCE -bed %s -fo %s.fasta" % (output_filename,output_filename)
-        
-    def local_parsimony(self,chromosome,start,end,output_prefix):
-        s = self.subgraph_from_genome_interval(chromosome,start,end)
+
+
+    def local_parsimony(self,chromosome,start,end,output_prefix,degree=2):
+        s = self.subgraph_from_genome_interval(chromosome,start,end,degree=degree)
 
         print "Created subgraph of this region with %d nodes and %d edges\n" % (len(s.nodes),len(s.edges))
         # s.to_json(output_prefix+".subgraph.json")
         region_nodes = set(s.nodes_within_genome_interval(chromosome,start,end))
 
-        reports = s.parsimony(depth_limit = 30)
+        reports = s.parsimony(depth_limit = 30,chop_end_nodes=degree)
 
         print "Beautiful art showing the paths in this region:"
         filtered_reports = []
@@ -1215,11 +1165,99 @@ class Graph(object):
 
         print "Found a parsimonious set of", len(filtered_reports), "paths."
         
-        s.karyotype_from_parsimony(filtered_reports,output_filename=output_prefix)
+        s.bed_files_from_parsimony(filtered_reports,output_filename=output_prefix)
         print "Printed out the coordinates of the nodes in each path: %s" % (output_prefix + ".paths.bed")
 
+        s.boxes_from_parsimony(filtered_reports,output_filename=output_prefix+".boxes.csv")
 
+    def boxes_from_parsimony(self,recordings,output_filename):
+        path_counter = 1
 
+        total_span_counts_by_node = {}
+
+        f = open(output_filename,'w')
+        f.write("chromosome,start,end,y_start,height,path_ID\n")
+        for record in recordings:
+            path = record[0][1:-1] # Cut off Portal nodes on either side of the path
+            minweight = record[2]
+            longest_intact_length = record[1]
+            for item in path:
+                node_name,port = item.split(":")
+                node = self.nodes[node_name]
+                y_start = total_span_counts_by_node.get(node_name,0) # current height of coverage for this node
+                f.write("%s,%d,%d,%d,%d,path_%d\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],y_start,minweight,path_counter))
+                total_span_counts_by_node[node_name] = total_span_counts_by_node.get(node_name,0) + minweight
+            path_counter += 1  
+        f.close()
+
+    def bed_files_from_parsimony(self,recordings,output_filename):
+        path_counter = 1
+
+        print "Header for bed file:\nchromosome\tstart\tend\tpath_ID\ttotal_length\tstrand\tminimum_read_depth_on_breakpoints\tlongest_intact_sequence_length\n"
+        for record in recordings:
+            f=open(output_filename+".path_%03d.bed"%(path_counter),'w')
+            path = record[0][1:-1] # Cut off Portal nodes on either side of the path
+            minweight = record[2]
+            longest_intact_length = record[1]
+            total_length = self.find_total_length(path)
+            # previous_chromosome = "0"
+            # chrom_length = 0
+            # f_records.write("path_%03d" % (record_counter))
+            for item in path:
+                node_name,port = item.split(":")
+                node = self.nodes[node_name]
+                strand = "+"
+                if port == "start":
+                    strand = "-"
+                f.write("%s\t%d\t%d\tpath_%03d\t%d\t%s\t%d\t%d\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],path_counter, total_length, strand,minweight,longest_intact_length))
+            path_counter += 1   
+            f.close()
+
+    def karyotype_from_parsimony(self,recordings,output_filename):
+        # record_counter = 1
+        # f_karyotype=open(output_filename + ".karyotype.txt",'w')
+        # f_records = open(output_filename + ".parsimony.txt",'w')
+        allpaths = []
+        path_counter = 1
+        f_bed = open(output_filename + ".paths.bed",'w')
+        f_bed.write("chromosome\tstart\tend\tpath_ID\ttotal_length\tstrand\tminimum_read_depth_on_breakpoints\tlongest_intact_sequence_length\n")
+        for record in recordings:
+            path = record[0][1:-1] # Cut off Portal nodes on either side of the path
+            minweight = record[2]
+            longest_intact_length = record[1]
+            total_length = self.find_total_length(path)
+            # previous_chromosome = "0"
+            # chrom_length = 0
+            # f_records.write("path_%03d" % (record_counter))
+            for item in path:
+                node_name,port = item.split(":")
+                node = self.nodes[node_name]
+                strand = "+"
+                if port == "start":
+                    strand = "-"
+                f_bed.write("%s\t%d\t%d\tpath_%03d\t%d\t%s\t%d\t%d\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],path_counter, total_length, strand,minweight,longest_intact_length))
+            path_counter += 1
+
+            #     node,port = item.split(":")
+            #     this_chromosome = self.nodes[node].attributes["chrom"]
+            #     if node != "Portal":
+            #         f_records.write("\t%s:%d-%d;%s" % (this_chromosome,self.nodes[node].attributes["start"],self.nodes[node].attributes["stop"], "Forward" if port == "stop" else "Reverse"))
+            #         # f_records.write("\t%s" % (item))
+            #     node_length = self.nodes[node].attributes["stop"]-self.nodes[node].attributes["start"]
+            #     if this_chromosome == previous_chromosome:
+            #         chrom_length += node_length
+            #     else:
+            #         if previous_chromosome != "0":
+            #             f_karyotype.write("path_%03d\t%s\t%d\t%.2f\n" % (record_counter,previous_chromosome,chrom_length,record[2]))
+            #             # f_karyotype.write("path_"+str(record_counter)+"\t"+previous_chromosome + "\t" + str(chrom_length) + "\n")
+            #         previous_chromosome = this_chromosome
+            #         chrom_length = node_length
+            # f_records.write("\n")
+            # record_counter += 1
+
+        # f_karyotype.close()
+        # f_records.close()
+        f_bed.close()
 
 
 

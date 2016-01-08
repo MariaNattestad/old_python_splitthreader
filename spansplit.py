@@ -121,7 +121,7 @@ def run(args):
             original_line = "%s\t%d\t%d\t%s\t%d\t%d\t%s" % (chrom1,pos1,other_pos1,chrom2,pos2,other_pos2,"\t".join(neat[6:11]))
             num_split = int(neat[11])
             # print "Inverted duplication:",original_line
-        elif chrom1==chrom2 and (abs(other_pos1-pos2) < 100000 or abs(other_pos2-pos1) < 100000): # if positions are within 100 kb they may share reads naturally
+        elif chrom1==chrom2 and (abs(other_pos1-pos2) < 100000 or abs(other_pos2-pos1) < 100000): # if positions are within 100 kb they may share reads naturally, so don't recalculate those by counting shared reads
             num_split = int(neat[11])
         
         fout.write(original_line+"\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n" % (num_split,left1,span1,right1,left2,span2,right2))
