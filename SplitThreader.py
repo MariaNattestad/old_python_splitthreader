@@ -1,15 +1,18 @@
 #!/usr/bin/env python
+
 from SplitThreaderLib import *
 import argparse
 import time
 
 # Example:
-# VARIANTS=Sniffles_SKBR3_Oct28_with_inv_dups.spansplit.bedpe
-# NODES=Sniffles_SKBR3_Oct28_with_inv_dups.spansplit.nodes.bed
+# VARIANTS=~/Desktop/SplitThreader_testcases/commandline/Sniffles_SKBR3_Oct28_with_inv_dups.spansplit.trimmed_columns.bedpe
+# NODES=~/Desktop/SplitThreader_testcases/commandline/Sniffles_SKBR3_Oct28_with_inv_dups.spansplit.coverage_on_nodes.bed
 # SplitThreader.py check --variants $VARIANTS --nodes $NODES
-# SplitThreader.py fusions --variants $VARIANTS --nodes $NODES --annotation gencode.v19.annotation.gtf.genes.bed --list IsoSeq_fusions_with_5_reads_but_no_direct_Sniffles --out test
+# SplitThreader.py fusions --variants $VARIANTS --nodes $NODES --annotation ~/Desktop/SplitThreader_testcases/commandline/gencode.v19.annotation.gtf.genes.bed --list ~/Desktop/SplitThreader_testcases/commandline//IsoSeq_fusions_with_5_reads_but_no_direct_Sniffles --out test
 # SplitThreader.py parsimony --variants $VARIANTS --nodes $NODES --out test --chrom 17 --start 37000000 --end 41000000
 # SplitThreader.py cycles --variants $VARIANTS --nodes $NODES --out test --annotation gencode.v19.annotation.gtf.genes.bed --depth 20
+
+
 
 def initialize(args):
     nodes_filename = args.nodes_from_spansplit
@@ -21,7 +24,6 @@ def initialize(args):
     return g
 
 def check(args):
-    
     g = initialize(args)
     print "Number of nodes:", len(g.nodes)
     print "Number of edges:", len(g.edges)
@@ -30,9 +32,7 @@ def check(args):
 
     if annotation_filename != None:
         g.read_annotation(annotation_filename,name_field=gene_name_column,by_node_access = True)
-
-    
-
+ 
 def fusions(args):
     annotation_filename = args.annotation_file
     gene_pair_list_file = args.gene_pair_list_file
@@ -74,35 +74,20 @@ def fusions(args):
     f.close()
     print "Found evidence of %d gene fusions out of the list of %d given:" % (total_supported_fusions,total_putative_fusions)
 
-
-    print "%d of these are through unique paths" % (len(g.collapse_redundant_paths(all_supported_fusion_paths,split_edges_only = True,names=all_supported_fusion_names)))
+    print "%d of these are through unique paths" % (len(g.group_redundant_gene_fusions(all_supported_fusion_paths,names=all_supported_fusion_names, split_edges_only = True)))
 
     print "Wrote output to %s" % (output_fusion_report)
-
 
 def parsimony(args):
     chromosome = args.zoom_region_chrom
     start = args.zoom_region_start
     end = args.zoom_region_end
     output_prefix = args.output_prefix
+    depth_limit = args.depth_limit
 
     g = initialize(args)
 
-    g.local_parsimony(chromosome,start,end,output_prefix)
-
-    # s = g.subgraph_from_genome_interval(chromosome,start,end)
-    # print "Number of nodes:", len(s.nodes)
-    # print "Number of edges:", len(s.edges)
-    # # print s.nodes
-    # # for edge in s.edges:
-    # #     print edge,edge.weight
-    # # s.to_json(output_prefix+".subgraph.json")
-
-    # recordings = s.parsimony(depth_limit = 30)
-    # print "Parsimonious set of", len(recordings), "paths found"
-    # for report in recordings:
-    #     print report
-    # s.karyotype_from_parsimony(recordings,output_filename=output_prefix)
+    g.local_parsimony(chromosome,start,end,output_prefix,degree=3,min_weight_required=10,depth_limit=depth_limit)
 
 def cycles(args):
     g = initialize(args)
@@ -138,18 +123,18 @@ def cycles(args):
 
     # g.paths_to_json(cycles,output_json)
 
+
 def main():
 
     # Software description
     parser=argparse.ArgumentParser(description="SplitThreader makes a graph out of the genome with sequences represented  \
         by nodes that are split at variant breakpoints and reconnected with the number of reads spanning and split as edge weights")
-    
    
     subparsers = parser.add_subparsers(title="Available commands")
     parser_check = subparsers.add_parser('check', help='Run sanity checks on graph (DO THIS FIRST)')
     parser_fusions = subparsers.add_parser('fusions', help='Find gene fusions')
     parser_parsimony = subparsers.add_parser('parsimony', help='Reconstruct history of a region by finding the most parsimonious set of paths through the graph')
-    parser_cycles = subparsers.add_parser('cycles', help='Detects cycles in the graph')
+    # parser_cycles = subparsers.add_parser('cycles', help='Detects cycles in the graph')
 
     # Parameters needed for all programs
     # parser.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants_from_spansplit",required=True) # Variant calls in bedpe format (like from Sniffles)
@@ -180,17 +165,19 @@ def main():
     parser_parsimony.add_argument("--chrom",help="which chromosome to focus historical reconstruction on",dest="zoom_region_chrom",type=str,required=True)
     parser_parsimony.add_argument("--start",help="which start position within the chromosome to focus historical reconstruction on",dest="zoom_region_start",type=int,required=True)
     parser_parsimony.add_argument("--end",help="which end position within the chromosome to focus historical reconstruction on",dest="zoom_region_end",type=int,required=True)
+    parser_parsimony.add_argument("--depth",help="Number of edges deep to search in the graph. Influences runtime. Default = 30",type=int,dest="depth_limit",default=30)
+
     parser_parsimony.set_defaults(func=parsimony)
 
     #  Parameters for "cycles" program: cycle detection outputting paths
-    parser_cycles.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants_from_spansplit",required=True) # Variant calls in bedpe format (like from Sniffles)
-    parser_cycles.add_argument("--nodes",help="nodes file from running spansplit.py",dest="nodes_from_spansplit",required=True)
-    parser_cycles.add_argument("--out",help="prefix for all output files",dest="output_prefix",required=True)
-    parser_cycles.add_argument("--annotation",help="annotation file",dest="annotation_file",default=None)
-    parser_cycles.add_argument("--gene_name_column",help="which column (1-indexed) of annotation file contains the gene names you want to report?",type=int,dest="gene_name_column",default=8)
-    parser_cycles.add_argument("--depth",help="Number of edges deep to search in the graph. Influences runtime. Default = 20",type=int,dest="depth_limit",default=20)
-    parser_cycles.set_defaults(func=cycles)
-    
+    # parser_cycles.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants_from_spansplit",required=True) # Variant calls in bedpe format (like from Sniffles)
+    # parser_cycles.add_argument("--nodes",help="nodes file from running spansplit.py",dest="nodes_from_spansplit",required=True)
+    # parser_cycles.add_argument("--out",help="prefix for all output files",dest="output_prefix",required=True)
+    # parser_cycles.add_argument("--annotation",help="annotation file",dest="annotation_file",default=None)
+    # parser_cycles.add_argument("--gene_name_column",help="which column (1-indexed) of annotation file contains the gene names you want to report?",type=int,dest="gene_name_column",default=8)
+    # parser_cycles.add_argument("--depth",help="Number of edges deep to search in the graph. Influences runtime. Default = 20",type=int,dest="depth_limit",default=20)
+    # parser_cycles.set_defaults(func=cycles)
+
 
     args=parser.parse_args()
     args.func(args)

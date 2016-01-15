@@ -112,7 +112,6 @@ def run(args):
         pos2 = int(neat[4]) # beginning of the interval 
         other_pos2 = int(neat[5]) # end of the second breakpoint interval
 
-
         if chrom1==chrom2 and (abs(other_pos1-pos2) < slop or abs(other_pos2-pos1) < slop):
             pos1 = min([pos1,pos2])
             pos2 = pos1
@@ -125,14 +124,14 @@ def run(args):
             num_split = int(neat[11])
         
         fout.write(original_line+"\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n" % (num_split,left1,span1,right1,left2,span2,right2))
-    #   chrom1 start1 stop1   chrom2 start2 stop2  variantID score strand1 strand2 typeOfSV numreads left1 span1 right1 left2 span2 right2
+    #   chrom1 start1 stop1   chrom2 start2 stop2  variantID score strand1 strand2 typeOfSV split_reads left1 span1 right1 left2 span2 right2
 
     f.close()
     fout.close()
 
     nodes(args)
 
-    
+
 def nodes(args):
     bedpe_file = args.out + ".spansplit.bedpe"
     output_file = args.out + ".spansplit.nodes.bed"

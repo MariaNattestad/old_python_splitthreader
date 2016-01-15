@@ -292,7 +292,7 @@ class Graph(object):
                 chromosome_locations[fields[0]] = i
                 i += 1
             node_name = "%s.%s" % (fields[0],fields[3])
-            node_attributes[node_name] = {"chrom":fields[0],"start":int(fields[1]),"stop":int(fields[2]),"x":int(fields[1]),"y":y}
+            node_attributes[node_name] = {"chrom":fields[0],"start":int(fields[1]),"stop":int(fields[2]),"x":int(fields[1]),"y":y,"weight":float(fields[4])}
         self.create_nodes_with_attributes(node_attributes)
 
         f.close()
@@ -544,17 +544,18 @@ class Graph(object):
                 shortest_path = all_connections[i]
         return shortest_path,min_distance
 
-    def find_path_total_lengths(self,allpaths):
+    def find_path_total_lengths(self,allpaths,count_only_nodes_in_set=[]):
         total_lengths = []
         for path in allpaths:
-            total_lengths.append(self.find_total_length(path))
+            total_lengths.append(self.find_total_length(path,count_only_nodes_in_set))
         return total_lengths
 
-    def find_total_length(self,path):
+    def find_total_length(self,path,count_only_nodes_in_set=[]):
         distance = 0
         for item in path:
             intermediate_node = self.port_from_path_item(item).node
-            distance += intermediate_node.attributes["stop"] - intermediate_node.attributes["start"]
+            if intermediate_node.name in count_only_nodes_in_set:
+                distance += intermediate_node.attributes["stop"] - intermediate_node.attributes["start"]
         return distance
 
     def find_paths_by_directions(self,node1,node2,pos1,pos2,strand1,strand2,depth_limit=5):
@@ -581,6 +582,7 @@ class Graph(object):
         f = open(annotation_file)
         counter = 0
         successes = 0
+        print "sample gene names used:"
         for line in f:
             fields = line.strip().split()
             chrom = fields[0]
@@ -597,12 +599,16 @@ class Graph(object):
                 for node_name in all_nodes_on_gene:
                     self.annotation_by_node[node_name] = self.annotation_by_node.get(node_name,[]) + [gene_name]
             counter += 1
+            if counter < 5:
+                print gene_name
         f.close()
 
-        print "Reading annotation: %.1f %% of genes placed successfully" % (successes*100./counter)
-        
-        if successes*100./counter < 20:
-            print "Check whether the chromosome names in the annotation file matches the variants and nodes files."
+
+        if by_node_access == True:
+            print "Reading annotation: %.1f %% of genes placed successfully" % (successes*100./counter)
+            
+            if successes*100./counter < 20:
+                print "Check whether the chromosome names in the annotation file matches the variants and nodes files."
 
 
     def node_names_from_path(self,path):
@@ -788,7 +794,7 @@ class Graph(object):
                 position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
         return longest_uninterrupted_path_so_far,longest_uninterrupted_length_so_far
 
-    def find_intact_length(self,path):
+    def find_intact_length(self,path,count_only_nodes_in_set=[]):
         longest_uninterrupted_length_so_far = 0
         current_uninterrupted_length = 0
         current_chromosome = ""
@@ -801,7 +807,8 @@ class Graph(object):
             seq_length = self.nodes[node].attributes["stop"]-self.nodes[node].attributes["start"]
             this_chromosome = self.nodes[node].attributes["chrom"]
             this_position = self.nodes[node].attributes[reverse(port)] # port refers to after the jump, so we reverse that to get the entry point into this node
-            if this_chromosome == current_chromosome and this_position == position_where_we_left_off: 
+            if (len(count_only_nodes_in_set) == 0 or node in count_only_nodes_in_set) and (this_chromosome == current_chromosome and this_position == position_where_we_left_off): 
+                # count the sequence length only if this node is within the special set (for regional parsimony)
                 current_uninterrupted_length += seq_length
             else:
                 # Save if this path is the best so far
@@ -814,10 +821,10 @@ class Graph(object):
             position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
         return longest_uninterrupted_length_so_far
 
-    def find_path_intact_lengths(self,allpaths):
+    def find_path_intact_lengths(self,allpaths,count_only_nodes_in_set=[]):
         intact_lengths = []
         for path in allpaths:
-            intact_lengths.append(self.find_intact_length(path))
+            intact_lengths.append(self.find_intact_length(path,count_only_nodes_in_set))
         return intact_lengths
 
     def subtract(self,path,weight):
@@ -956,6 +963,49 @@ class Graph(object):
 
         return self.collapse_redundant_paths(cycles_only)
 
+    def group_redundant_gene_fusions(self,paths,names,split_edges_only = False):
+        paths_used = []
+        edge_lists_used = []
+        names_used = []
+
+        groups = {}
+        if names != None and len(names)!=len(paths):
+            print "To label the paths with names, the length of names (list) must be the same as the length of paths (list)"
+            return None
+
+        i = 0
+        for path in paths:
+            edge_list = set(self.edges_from_path(path,split_edges_only=split_edges_only))
+            if paths_used == []:
+                paths_used.append(path)
+                edge_lists_used.append(edge_list)
+                if names != None:
+                    names_used.append(names[i])
+                    groups[names[i]] = [names[i]]
+            else:
+                redundant = False
+                for j in xrange(len(edge_lists_used)):
+                    previous_edge_list = edge_lists_used[j]
+                    if edge_list == previous_edge_list:
+                        redundant = True
+                        if names != None:
+                            # print names_used[j], "<----", names[i], "\t(same path, possibly overlapping genes)"
+                            # print "\t%s\t(same fusion path as %s)" % (names[i], names_used[j])
+                            groups[names_used[j]].append(names[i])
+                        break
+                if redundant == False:
+                    paths_used.append(path)
+                    edge_lists_used.append(edge_list)
+                    if names != None:
+                        names_used.append(names[i])
+                        groups[names[i]] = [names[i]]
+            i += 1
+
+        for key in groups:
+            print groups[key]
+
+        return paths_used
+
     def collapse_redundant_paths(self,paths,split_edges_only = False,names = None):
         paths_used = []
         edge_lists_used = []
@@ -1069,7 +1119,7 @@ class Graph(object):
 
         return s
 
-    def parsimony(self,use_breadth_first_search=False,portal_name="Portal",verbose=False,depth_limit=20,cycle_limit=0,min_weight_required = 10,chop_end_nodes=0):
+    def parsimony(self,use_breadth_first_search=False,portal_name="Portal",verbose=False,depth_limit=20,cycle_limit=0,min_weight_required = 10,chop_end_nodes=0,count_only_nodes_in_set=[]):
         import time
         self.add_portal()
         # recording = []
@@ -1081,22 +1131,24 @@ class Graph(object):
             print "Number of paths", len(allpaths)
         
         # Chop off the end nodes on each path for the subgraph/local region case as these are inflated and can differentiate paths that are actually the same within the specific region
-        newpaths = []
-        for path in allpaths:
-            newpaths.append(path[chop_end_nodes:-chop_end_nodes])
-        allpaths = newpaths
+        if chop_end_nodes != 0:
+            newpaths = []
+            for path in allpaths:
+                if len(path) > chop_end_nodes*2:
+                    newpaths.append(path[chop_end_nodes:-chop_end_nodes])
+            allpaths = newpaths
 
-        intact_lengths = self.find_path_intact_lengths(allpaths)
-        total_lengths = self.find_path_total_lengths(allpaths)
-        both_lengths = []
+        intact_lengths = self.find_path_intact_lengths(allpaths,count_only_nodes_in_set)
+        total_lengths = self.find_path_total_lengths(allpaths,count_only_nodes_in_set)
+        sorting_parameters = []
+
+        # Sorting by 1) Longest intact path within region, 2) Longest total path within region, 3) Fewest splits
         for i in xrange(len(allpaths)):
-            both_lengths.append((i,intact_lengths[i],total_lengths[i]))
+            sorting_parameters.append((i,intact_lengths[i],total_lengths[i],-1*self.count_splits_in_path(allpaths[i])))
         
-        # print both_lengths
         import operator
-        ordering = sorted(both_lengths,key=operator.itemgetter(1,2))[::-1]
+        ordering = sorted(sorting_parameters,key=operator.itemgetter(1,2,3))[::-1]
 
-        #########################################
         recordings = []
         # for i in xrange(len(indices)): 
         for item in ordering:
@@ -1104,10 +1156,11 @@ class Graph(object):
             # index = indices[i]
             path = allpaths[index]
             weight = self.min_weight(path)
-            # print weight,item, path
             if weight < min_weight_required:
                 continue
             else:
+                # print path
+                # print weight
                 recordings.append([path,intact_lengths[index],weight])
                 self.subtract(path=path,weight=weight)
 
@@ -1135,23 +1188,37 @@ class Graph(object):
             path_counter += 1      
         f.close()
 
+    def local_parsimony(self,chromosome,start,end,output_prefix,degree=3,min_weight_required=10,depth_limit=30):
+        self.calculate_edge_weights_from_node_coverages()
 
-    def local_parsimony(self,chromosome,start,end,output_prefix,degree=2):
+
+
+
         s = self.subgraph_from_genome_interval(chromosome,start,end,degree=degree)
+
+
+        # s.calculate_edge_weights_from_node_coverages()
+        
+
+
+
 
         print "Created subgraph of this region with %d nodes and %d edges\n" % (len(s.nodes),len(s.edges))
         # s.to_json(output_prefix+".subgraph.json")
         region_nodes = set(s.nodes_within_genome_interval(chromosome,start,end))
 
-        reports = s.parsimony(depth_limit = 30,chop_end_nodes=degree)
+        print region_nodes
 
-        print "Beautiful art showing the paths in this region:"
+        reports = s.parsimony(depth_limit = depth_limit,chop_end_nodes=degree,count_only_nodes_in_set=region_nodes,min_weight_required=min_weight_required) 
+
+        # print "Beautiful art showing the paths in this region:"
         filtered_reports = []
         output = ""
         for report in reports[::-1]:
             path = report[0]
             path_node_names = s.node_names_from_path(path)
             if len(set(path_node_names).intersection(region_nodes)):
+                print report
                 filtered_reports.append(report)
                 for node in region_nodes:
                     if node in path_node_names:
@@ -1165,9 +1232,7 @@ class Graph(object):
 
         print "Found a parsimonious set of", len(filtered_reports), "paths."
         
-        s.bed_files_from_parsimony(filtered_reports,output_filename=output_prefix)
-        print "Printed out the coordinates of the nodes in each path: %s" % (output_prefix + ".paths.bed")
-
+        # s.bed_files_from_parsimony(filtered_reports,output_filename=output_prefix)
         s.boxes_from_parsimony(filtered_reports,output_filename=output_prefix+".boxes.csv")
 
     def boxes_from_parsimony(self,recordings,output_filename):
@@ -1193,7 +1258,7 @@ class Graph(object):
     def bed_files_from_parsimony(self,recordings,output_filename):
         path_counter = 1
 
-        print "Header for bed file:\nchromosome\tstart\tend\tpath_ID\ttotal_length\tstrand\tminimum_read_depth_on_breakpoints\tlongest_intact_sequence_length\n"
+        # print "Header for bed file:\nchromosome\tstart\tend\tpath_ID\ttotal_length\tstrand\tminimum_read_depth_on_breakpoints\tlongest_intact_sequence_length\n"
         for record in recordings:
             f=open(output_filename+".path_%03d.bed"%(path_counter),'w')
             path = record[0][1:-1] # Cut off Portal nodes on either side of the path
@@ -1258,6 +1323,155 @@ class Graph(object):
         # f_karyotype.close()
         # f_records.close()
         f_bed.close()
+
+    def calculate_edge_weights_from_node_coverages(self):
+        print "//////////////////////////////////////////////////////"
+
+        flagged_splits = []
+        adjusted_splits = []
+
+        counter = 0
+        for edge in self.edges:
+
+            if edge.spansplit == "split":
+            
+                # print edge
+                # print edge.spansplit
+
+                port1 = edge.ports[1]
+                port2 = edge.ports[0]
+
+                node1 = port1.node
+                node2 = port2.node
+
+
+                n1 = node1.attributes["weight"]
+                n2 = node2.attributes["weight"]
+
+                # print node1, "weight:", n1
+                # print node2, "weight:", n2
+
+                # print edge.ports[0].edges.keys()
+                # print edge.ports[1].edges.keys()
+                
+                
+                # print port1
+                # print port2
+
+                span_port1 = ""
+                span_edge1 = ""
+
+                for key in port1.edges.keys():
+                    if key != port2:
+                        if span_port1 == "":
+                            span_port1 = port1.edges[key].glide(port1)
+                            span_edge1 = port1.edges[key]
+                        else:
+                            # print "span_port1 already set. Old:", span_port1, "   New:", port1.edges[key].glide(key)
+                            # print port1.edges
+                            span_port1 = ""
+                            span_edge1 = ""
+                            break
+
+                span_port2 = ""
+                span_edge2 = ""
+
+                for key in port2.edges.keys():
+                    if key != port1:
+                        if span_port2 == "":
+                            span_port2 = port2.edges[key].glide(port2)
+                            span_edge2 = port2.edges[key]
+                        else:
+                            # print "span_port2 already set. Old:", span_port2, "   New:", port2.edges[key].glide(key)
+                            # print port2.edges
+                            span_port2 = ""
+                            span_edge2 = ""
+                            break
+
+                # print "Opposite ports:"
+                # print span_port1
+                # print span_port2
+
+
+                if span_port1 != "" and span_port2 != "": # Only if the spanning nodes are present do we continue calculations
+                    x1 = span_port1.node.attributes["weight"]
+                    # print "span weight 1:", x1
+                    
+                    x2 = span_port2.node.attributes["weight"]
+                    # print "span weight 2:", x2
+
+                    est_split_weight_1 = n1 - x1
+                    est_split_weight_2 = n2 - x2
+
+                    # print "estimated weights:", est_split_weight_1, est_split_weight_2
+                    percent_diff = 100*abs(est_split_weight_1-est_split_weight_2)/((est_split_weight_1+est_split_weight_2)/2)
+                    # print "percentage difference:", percent_diff
+
+                    if est_split_weight_1 < 0 or est_split_weight_2 < 0:
+                        # print edge
+                        # print node1, "weight:", n1
+                        # print node2, "weight:", n2
+
+                        # print span_port1
+                        # print span_port2
+                        # print "n1:", n1
+                        # print "n2:", n2
+                        # print "x1:", x1
+                        # print "x2:", x2
+
+                        flagged_splits.append(edge)
+                        # if port1 == port2:
+                        #     print "Inverted duplication with negatives"
+                        #     print edge
+                        #     print span_port1
+                        #     print span_port2
+                        #     print "n1:", n1
+                        #     print "n2:", n2
+                        #     print "x1:", x1
+                        #     print "x2:", x2
+                        #     print "est_split_weight_1:",est_split_weight_1
+                        #     print "est_split_weight_2:",est_split_weight_2
+                        #     print "-----------"
+
+                    else: #if percent_diff < 100:
+                        # Then it's reasonable and we will use the average of the est_split_weight_1/2 instead of the split read count
+                        # old_edge_weight = edge.weight
+                        edge.weight = (est_split_weight_1+est_split_weight_2)/2
+
+                        # print edge, edge.weight-old_edge_weight
+                        span_edge1.weight = x1
+                        span_edge2.weight = x2
+                        adjusted_splits.append(edge)
+
+                        # if port1 == port2:
+                        #     print "Inverted duplication"
+                        #     print edge
+                        #     print span_port1
+                        #     print span_port2
+                        #     print "n1:", n1
+                        #     print "n2:", n2
+                        #     print "x1:", x1
+                        #     print "x2:", x2
+                        #     print "est_split_weight_1:",est_split_weight_1
+                        #     print "est_split_weight_2:",est_split_weight_2
+                        #     print "-----------"
+
+
+
+                        
+                    # print "-----------"
+
+                    # if counter > 6:
+                    #     break
+                    counter += 1
+        print "total:",counter
+
+        print "flagged:",len(flagged_splits)
+        print "adjusted:",len(adjusted_splits)
+
+
+        print "//////////////////////////////////////////////////////"
+
 
 
 
