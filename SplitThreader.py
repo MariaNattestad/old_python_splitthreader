@@ -8,7 +8,9 @@ import time
 # VARIANTS=~/Desktop/SplitThreader_testcases/commandline/Sniffles_SKBR3_Oct28_with_inv_dups.spansplit.trimmed_columns.bedpe
 # NODES=~/Desktop/SplitThreader_testcases/commandline/Sniffles_SKBR3_Oct28_with_inv_dups.spansplit.coverage_on_nodes.bed
 # SplitThreader.py check --variants $VARIANTS --nodes $NODES
-# SplitThreader.py fusions --variants $VARIANTS --nodes $NODES --annotation ~/Desktop/SplitThreader_testcases/commandline/gencode.v19.annotation.gtf.genes.bed --list ~/Desktop/SplitThreader_testcases/commandline//IsoSeq_fusions_with_5_reads_but_no_direct_Sniffles --out test
+# LIST=~/Desktop/SplitThreader_testcases/commandline/all_sizes.quivered_hq.fusion_finder.mtc99.mlcbp100.mdbl100kb.bedpe.with_abundance.pair.genes.summary.2_fl_reads.bedpe.list
+# GENES=~/Desktop/SplitThreader_testcases/commandline/gencode.v19.annotation.gtf.genes.bed
+# SplitThreader.py fusions --variants $VARIANTS --nodes $NODES --annotation $GENES --list $LIST --out test
 # SplitThreader.py parsimony --variants $VARIANTS --nodes $NODES --out test --chrom 17 --start 37000000 --end 41000000
 # SplitThreader.py cycles --variants $VARIANTS --nodes $NODES --out test --annotation gencode.v19.annotation.gtf.genes.bed --depth 20
 
@@ -37,46 +39,13 @@ def fusions(args):
     annotation_filename = args.annotation_file
     gene_pair_list_file = args.gene_pair_list_file
     gene_name_column = args.gene_name_column
-    output_fusion_report = args.output_prefix + ".fusion_reports.txt"
+    output_fusion_report_file = args.output_prefix + ".fusion_reports.txt"
 
     g = initialize(args)
     g.read_annotation(annotation_filename,name_field=gene_name_column,by_node_access = False)
 
-    f=open(gene_pair_list_file)
-    
-    f_output_fusion_report = open(output_fusion_report,"w")
-    f_output_fusion_report.write("gene_1\tgene2\tnumber_of_variants_to_thread_through\ttotal_fusion_gene_length\tstrand_gene_1\tstrand_gene_2\tminimum_read_depth_on_breakpoints\n")
+    g.search_for_fusions(gene_pair_list_file,output_fusion_report_file)
 
-    gene_fusion_reports = []
-    gene_names = []
-    for line in f:
-        fields = line.strip().split()
-        gene_names.append((fields[0],fields[1]))
-        gene_fusion_reports.append(g.gene_fusion_report(fields[0],fields[1]))
-
-    total_putative_fusions = len(gene_fusion_reports)
-    total_supported_fusions = 0
-    
-    all_supported_fusion_paths = []
-    all_supported_fusion_names = []
-
-    for i in xrange(len(gene_fusion_reports)):
-        report = gene_fusion_reports[i]
-        if report == None:
-            f_output_fusion_report.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (gene_names[i][0],gene_names[i][1], "none","none","none","none","none"))
-        else:
-            total_supported_fusions += 1
-            all_supported_fusion_paths.append(report["path"])
-            all_supported_fusion_names.append(report["Gene1"] + "-" + report["Gene2"])
-            f_output_fusion_report.write("%s\t%s\t%d\t%d\t%s\t%s\t%d\n" % (gene_names[i][0],gene_names[i][1], report["number_of_splits"], report["distance"],report["Gene1_direction"],report["Gene2_direction"],g.min_weight(report["path"])))
-            # self.g.franken_path(report["path"],"/Users/mnattest/Desktop/SplitThreader_testcases/Extra_Sniffles_franken_%s_%s.txt" % (fields[0],fields[1]))
-    f_output_fusion_report.close()
-    f.close()
-    print "Found evidence of %d gene fusions out of the list of %d given:" % (total_supported_fusions,total_putative_fusions)
-
-    print "%d of these are through unique paths" % (len(g.group_redundant_gene_fusions(all_supported_fusion_paths,names=all_supported_fusion_names, split_edges_only = True)))
-
-    print "Wrote output to %s" % (output_fusion_report)
 
 def parsimony(args):
     chromosome = args.zoom_region_chrom
@@ -89,39 +58,39 @@ def parsimony(args):
 
     g.local_parsimony(chromosome,start,end,output_prefix,degree=3,min_weight_required=10,depth_limit=depth_limit)
 
-def cycles(args):
-    g = initialize(args)
-    output_cycles = args.output_prefix + ".cycles_summary.txt"
-    # output_json = args.output_prefix + ".cycles.json"
-    output_bed = args.output_prefix + ".cycles.bed"
-    depth_limit = args.depth_limit
-    annotation_filename = args.annotation_file
-    gene_name_column = args.gene_name_column
+# def cycles(args):
+#     g = initialize(args)
+#     output_cycles = args.output_prefix + ".cycles_summary.txt"
+#     # output_json = args.output_prefix + ".cycles.json"
+#     output_bed = args.output_prefix + ".cycles.bed"
+#     depth_limit = args.depth_limit
+#     annotation_filename = args.annotation_file
+#     gene_name_column = args.gene_name_column
 
-    if annotation_filename != None:
-        g.read_annotation(annotation_filename,name_field=gene_name_column,by_node_access = True)
+#     if annotation_filename != None:
+#         g.read_annotation(annotation_filename,name_field=gene_name_column,by_node_access = True)
 
-    cycles = g.find_cycles(depth_limit=depth_limit)
-    print "%d cycles found at depth limit %d" % (len(cycles),depth_limit)
+#     cycles = g.find_cycles(depth_limit=depth_limit)
+#     print "%d cycles found at depth limit %d" % (len(cycles),depth_limit)
 
-    f=open(output_cycles,"w")
-    f.write("path_ID\tnumber_of_splits\tminimum_read_depth_on_breakpoints\tcycle_length_in_bp\tchromosomes_involved\tgenes_in_cycle\n")
-    path_counter = 0
-    for cycle in cycles:
-        path = cycle[:-1] # remove the last element because it is the same as the first
-        chromosomes = set()
-        for item in path:
-            chromosomes.add(g.port_from_path_item(item).node.attributes["chrom"])
-        path_counter += 1
-        f.write("path_%03d\t%d\t%d\t%d\t" % (path_counter,g.count_splits_in_path(cycle), g.min_weight(path), g.find_total_length(path)) + ",".join(chromosomes) + "\t" + ",".join(g.genes_on_path(path)) + "\n")
+#     f=open(output_cycles,"w")
+#     f.write("path_ID\tnumber_of_splits\tminimum_read_depth_on_breakpoints\tcycle_length_in_bp\tchromosomes_involved\tgenes_in_cycle\n")
+#     path_counter = 0
+#     for cycle in cycles:
+#         path = cycle[:-1] # remove the last element because it is the same as the first
+#         chromosomes = set()
+#         for item in path:
+#             chromosomes.add(g.port_from_path_item(item).node.attributes["chrom"])
+#         path_counter += 1
+#         f.write("path_%03d\t%d\t%d\t%d\t" % (path_counter,g.count_splits_in_path(cycle), g.min_weight(path), g.find_total_length(path)) + ",".join(chromosomes) + "\t" + ",".join(g.genes_on_path(path)) + "\n")
 
-    f.close()
-    g.franken_paths(cycles,output_bed)
-    print "Wrote output to %s and %s:" % (output_cycles,output_bed)
-    print "\tSummary information on each cycle: %s" % (output_cycles)
-    print "\tGenomic coordinates of the sequences involved, in bed format: %s" % (output_bed)
+#     f.close()
+#     g.franken_paths(cycles,output_bed)
+#     print "Wrote output to %s and %s:" % (output_cycles,output_bed)
+#     print "\tSummary information on each cycle: %s" % (output_cycles)
+#     print "\tGenomic coordinates of the sequences involved, in bed format: %s" % (output_bed)
 
-    # g.paths_to_json(cycles,output_json)
+#     # g.paths_to_json(cycles,output_json)
 
 
 def main():

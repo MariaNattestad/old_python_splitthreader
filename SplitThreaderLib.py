@@ -624,7 +624,7 @@ class Graph(object):
             genes = genes + self.annotation_by_node.get(node_name,[])
         return list(set(genes))
 
-    def gene_fusion_distance(self,gene_name1,gene_name2,depth_limit,verbose=False):
+    def gene_fusion_distance(self,gene_name1,gene_name2,additional_info = None, depth_limit=20, verbose=False):
         annot1 = self.annotation.get(gene_name1)
         annot2 = self.annotation.get(gene_name2)
         
@@ -668,7 +668,7 @@ class Graph(object):
                             #             min_distance = distances[i]
                             #             path = paths[i]
                             for i in xrange(len(paths)):
-                                reports.append({"Gene1":gene_name1,"Gene2":gene_name2, "Gene1_direction":direction_gene1, "Gene2_direction":direction_gene2, "path":paths[i],"distance":distances[i]})
+                                reports.append({"Gene1":gene_name1,"Gene2":gene_name2, "Gene1_direction":direction_gene1, "Gene2_direction":direction_gene2, "path":paths[i],"distance":distances[i],"info":additional_info})
         return reports
 
     def count_splits_in_path(self,path):
@@ -695,12 +695,36 @@ class Graph(object):
         #     position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
         return num_splits
 
-    def gene_fusion_report(self,gene_name1,gene_name2,depth_limit=15,verbose = False):
+    def split_weights_in_path(self,path):
+        split_weights = []
+        edges = self.edges_from_path(path)
+        for edge in edges:
+            if edge.spansplit == "split":
+                split_weights.append(edge.weight)
+
+        ################# This is the old way before I started encoding spansplit as an edge property
+        # num_splits = -1
+
+        # current_chromosome = ""
+        # position_where_we_left_off = 0
+        # for item in path:
+        #     node,port = item.split(":")
+        #     this_chromosome = self.nodes[node].attributes["chrom"]
+        #     this_position = self.nodes[node].attributes[reverse(port)] # port refers to after the jump, so we reverse that to get the entry point into this node
+        #     if this_chromosome == current_chromosome and this_position == position_where_we_left_off: 
+        #         pass # reference spanning, not a split
+        #     else:
+        #         num_splits += 1
+        #         current_chromosome = this_chromosome
+        #     position_where_we_left_off = self.nodes[node].attributes[port] # port refers to after the jump, so that reflects the exit port out of this node
+        return split_weights
+
+    def gene_fusion_report(self,gene_name1,gene_name2,additional_info = None, depth_limit=15,verbose = False):
         if verbose:
             print gene_name1,"-",gene_name2
         # print gene_name1, self.annotation.get(gene_name1)
         # print gene_name2, self.annotation.get(gene_name2)
-        reports = self.gene_fusion_distance(gene_name1,gene_name2,depth_limit=depth_limit,verbose=False)
+        reports = self.gene_fusion_distance(gene_name1,gene_name2,additional_info = additional_info, depth_limit=depth_limit,verbose=False)
 
         if len(reports) == 0:
             if verbose:
@@ -753,7 +777,7 @@ class Graph(object):
                 print '__________________________'
 
             return to_return
-        # maybe put in a safety so genes that are already close to each other aren't reported as fusions unless the variants bring them closer so it's not read-through transcription
+        # maybe put in a safety so genes that are already close to each other aren't reported as fusions unless the variants bring them closer: so it's not read-through transcription
 
     ################# Still works but no longer used by Parsimony or in any command-line program ############################
     def find_longest_path(self,use_breadth_first_search=False,depth_limit=50,portal_name="Portal",required_minimum_edge_weight=1,cycle_limit=2):
@@ -963,48 +987,40 @@ class Graph(object):
 
         return self.collapse_redundant_paths(cycles_only)
 
-    def group_redundant_gene_fusions(self,paths,names,split_edges_only = False):
+    def group_redundant_gene_fusions(self,paths_dict_by_fusion_name,split_edges_only = False):
         paths_used = []
         edge_lists_used = []
         names_used = []
 
         groups = {}
-        if names != None and len(names)!=len(paths):
-            print "To label the paths with names, the length of names (list) must be the same as the length of paths (list)"
-            return None
 
-        i = 0
-        for path in paths:
+        # i = 0
+        for fusion_name in paths_dict_by_fusion_name:
+            path = paths_dict_by_fusion_name[fusion_name]
             edge_list = set(self.edges_from_path(path,split_edges_only=split_edges_only))
             if paths_used == []:
                 paths_used.append(path)
                 edge_lists_used.append(edge_list)
-                if names != None:
-                    names_used.append(names[i])
-                    groups[names[i]] = [names[i]]
+                names_used.append(fusion_name)
+                groups[fusion_name] = [fusion_name]
             else:
                 redundant = False
                 for j in xrange(len(edge_lists_used)):
                     previous_edge_list = edge_lists_used[j]
                     if edge_list == previous_edge_list:
                         redundant = True
-                        if names != None:
-                            # print names_used[j], "<----", names[i], "\t(same path, possibly overlapping genes)"
-                            # print "\t%s\t(same fusion path as %s)" % (names[i], names_used[j])
-                            groups[names_used[j]].append(names[i])
+                        # print names_used[j], "<----", names[i], "\t(same path, possibly overlapping genes)"
+                        # print "\t%s\t(same fusion path as %s)" % (names[i], names_used[j])
+                        groups[names_used[j]].append(fusion_name)
                         break
                 if redundant == False:
                     paths_used.append(path)
                     edge_lists_used.append(edge_list)
-                    if names != None:
-                        names_used.append(names[i])
-                        groups[names[i]] = [names[i]]
-            i += 1
+                    names_used.append(fusion_name)
+                    groups[fusion_name] = [fusion_name]
+            # i += 1
 
-        for key in groups:
-            print groups[key]
-
-        return paths_used
+        return groups.values()
 
     def collapse_redundant_paths(self,paths,split_edges_only = False,names = None):
         paths_used = []
@@ -1472,6 +1488,94 @@ class Graph(object):
 
         print "//////////////////////////////////////////////////////"
 
+    def search_for_fusions(self,gene_pair_list_file,output_fusion_report_file):
+        f=open(gene_pair_list_file)
+        
+        gene_fusion_reports = []
+        gene_names = []
+        for line in f:
+            fields = line.strip().split()
+            gene_names.append((fields[0],fields[1]))
+            gene_fusion_reports.append(self.gene_fusion_report(fields[0],fields[1],fields[2:]))
+
+        total_putative_fusions = len(gene_fusion_reports)
+        total_supported_fusions = 0
+        
+        all_supported_fusion_paths = []
+        all_supported_fusion_names = []
+        paths_dict_by_fusion_name = {}
+        reports_dict_by_fusion_name = {}
+
+        for i in xrange(len(gene_fusion_reports)):
+            report = gene_fusion_reports[i]
+            if report == None:
+                pass
+                # f_output_fusion_report.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (gene_names[i][0],gene_names[i][1], "none","none","none","none","none"))
+            else:
+                total_supported_fusions += 1
+                if report["Gene1_direction"]=="Reverse" and report["Gene2_direction"]=="Reverse":
+                    report["Gene1_direction"]="Forward"
+                    report["Gene2_direction"]="Forward"
+                    tmp = report["Gene1"]
+                    report["Gene1"] = report["Gene2"]
+                    report["Gene2"] = tmp
+                key = (report["Gene1"],report["Gene2"])
+                paths_dict_by_fusion_name[key] = report["path"]
+                reports_dict_by_fusion_name[key] = report
+                
+        f.close()
+        print "Found evidence of %d gene fusions out of the list of %d given:" % (total_supported_fusions,total_putative_fusions)
+
+
+        groups = self.group_redundant_gene_fusions(paths_dict_by_fusion_name, split_edges_only = True)
+        final_reports = []
+        num_split_RNA_reads = []
+        redundant_fusions = {}
+        for group in groups:
+            gene_lengths = {}
+            for fusion_name in group:
+                # print reports_dict_by_fusion_name[fusion_name]
+                # print reports_dict_by_fusion_name[fusion_name]["info"]
+                annot1 = self.annotation[fusion_name[0]]
+                # print annot1
+                annot2 = self.annotation[fusion_name[1]]
+                # print annot2
+                length1 = annot1["stop"]-annot1["start"]
+                length2 = annot2["stop"]-annot2["start"]
+                gene_lengths[fusion_name] = length1 + length2
+            # print gene_lengths
+            max_fusion_name = ""
+            max_gene_length = 0
+            for fusion_name in gene_lengths:
+                if gene_lengths[fusion_name] > max_gene_length:
+                    max_fusion_name = fusion_name
+                    max_gene_length = gene_lengths[fusion_name]
+            # print "MAX:", max_fusion_name,max_gene_length
+            redundant_fusions[max_fusion_name] = set(group)-set([max_fusion_name])
+
+            final_reports.append(reports_dict_by_fusion_name[max_fusion_name])
+            num_split_RNA_reads.append(int(reports_dict_by_fusion_name[max_fusion_name]["info"][0]))
+
+
+        f_output_fusion_report = open(output_fusion_report_file,"w")
+        f_output_fusion_report.write("gene_1\tgene2\tRNA_split_read_count\tDNA_split_reads_at_variants\ttotal_fusion_gene_length\tstrand_gene_1\tstrand_gene_2\tnumber_of_splits_to_thread_through\tother_fusions_through_same_variant(s)\n")
+
+        import numpy as np
+        sorted_indices = np.argsort(num_split_RNA_reads)[::-1]
+        for index in sorted_indices:
+            report = final_reports[index]
+            all_split_weights = map(str,self.split_weights_in_path(report["path"]))
+            alternate_names = []
+            for item in redundant_fusions[(report["Gene1"], report["Gene2"])]:
+                alternate_names.append(item[0] + "=" + item[1])
+            rna_split_read_count = int(report["info"][0])
+            f_output_fusion_report.write("%s\t%s\t%d\t%s\t%d\t%s\t%s\t%d\t%s\t%f\n" % (report["Gene1"], report["Gene2"], rna_split_read_count, ",".join(all_split_weights),report["distance"],report["Gene1_direction"],report["Gene2_direction"],report["number_of_splits"], ",".join(alternate_names)), self.min_weight(report["path"])   )
+
+        f_output_fusion_report.close()
+
+        # print "%d of these are through unique paths" % (len())
+
+        # print "Wrote output to %s" % (output_fusion_report_file)
 
 
 
