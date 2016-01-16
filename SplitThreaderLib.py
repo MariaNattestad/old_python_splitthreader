@@ -1558,7 +1558,7 @@ class Graph(object):
 
 
         f_output_fusion_report = open(output_fusion_report_file,"w")
-        f_output_fusion_report.write("gene_1\tgene2\tRNA_split_read_count\tDNA_split_reads_at_variants\ttotal_fusion_gene_length\tstrand_gene_1\tstrand_gene_2\tnumber_of_splits_to_thread_through\tother_fusions_through_same_variant(s)\n")
+        f_output_fusion_report.write("gene_1\tgene2\tRNA_split_read_count\tDNA_split_reads_at_variants\ttotal_fusion_gene_length\tstrand_gene_1\tstrand_gene_2\tnumber_of_splits_to_thread_through\tminimum_spansplit_weights_along_path\tother_fusions_through_same_variant(s)\n")
 
         import numpy as np
         sorted_indices = np.argsort(num_split_RNA_reads)[::-1]
@@ -1569,7 +1569,7 @@ class Graph(object):
             for item in redundant_fusions[(report["Gene1"], report["Gene2"])]:
                 alternate_names.append(item[0] + "=" + item[1])
             rna_split_read_count = int(report["info"][0])
-            f_output_fusion_report.write("%s\t%s\t%d\t%s\t%d\t%s\t%s\t%d\t%s\t%f\n" % (report["Gene1"], report["Gene2"], rna_split_read_count, ",".join(all_split_weights),report["distance"],report["Gene1_direction"],report["Gene2_direction"],report["number_of_splits"], ",".join(alternate_names)), self.min_weight(report["path"])   )
+            f_output_fusion_report.write("%s\t%s\t%d\t%s\t%d\t%s\t%s\t%d\t%f\t%s\n" % (report["Gene1"], report["Gene2"], rna_split_read_count, ",".join(all_split_weights),report["distance"],report["Gene1_direction"],report["Gene2_direction"],report["number_of_splits"], self.min_weight(report["path"]), ",".join(alternate_names)   ))
 
         f_output_fusion_report.close()
 
