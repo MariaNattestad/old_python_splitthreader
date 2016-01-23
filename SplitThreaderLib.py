@@ -744,17 +744,20 @@ class Graph(object):
         else:
             if verbose:
                 print len(reports), "gene fusion(s) detected"
+
             scores = []
             for report in reports:
                 score = 0
                 num_splits = self.count_splits_in_path(report["path"])
                 if report["Gene1_direction"] == report["Gene2_direction"] and num_splits==1 and report["distance"]<100000:
                     score = 150
+                elif report["Gene1_direction"] == report["Gene2_direction"] and num_splits==2 and report["distance"]<100000:
+                    score = 120
                 elif report["Gene1_direction"] == report["Gene2_direction"] and num_splits==1 and report["distance"]<1000000:
                     score = 100
                 elif num_splits==1 and report["distance"]<1000000:
                     score = 70
-                elif report["Gene1_direction"] == report["Gene2_direction"] and num_splits==2 and report["distance"]<1000000:
+                elif report["Gene1_direction"] == report["Gene2_direction"] and num_splits==2 and report["distance"]<1000000:                
                     score = 50
                 elif num_splits==2 and report["distance"]<1000000:
                     score = 40
@@ -773,9 +776,10 @@ class Graph(object):
                 if scores[index] == max(scores):
                     report = reports[index]
                     report["number_of_splits"] = self.count_splits_in_path(report["path"])
-                    if verbose:
-                        print scores[index], report["Gene1_direction"],"-",report["Gene2_direction"],"|", report["distance"]/1000., "kb","|", self.count_splits_in_path(report["path"]), "translocation(s)", report["path"]
                     to_return = report
+                if verbose and scores[index]>80:
+                    report = reports[index]
+                    print scores[index], report["Gene1_direction"],"-",report["Gene2_direction"],"|", report["distance"]/1000., "kb","|", self.count_splits_in_path(report["path"]), "translocation(s)", report["path"]
             if verbose:
                 print '__________________________'
 
@@ -1353,9 +1357,6 @@ class Graph(object):
         for edge in self.edges:
 
             if edge.spansplit == "split":
-            
-                # print edge
-                # print edge.spansplit
 
                 port1 = edge.ports[1]
                 port2 = edge.ports[0]
@@ -1367,16 +1368,6 @@ class Graph(object):
                 n1 = node1.attributes["weight"]
                 n2 = node2.attributes["weight"]
 
-                # print node1, "weight:", n1
-                # print node2, "weight:", n2
-
-                # print edge.ports[0].edges.keys()
-                # print edge.ports[1].edges.keys()
-                
-                
-                # print port1
-                # print port2
-
                 span_port1 = ""
                 span_edge1 = ""
 
@@ -1386,8 +1377,6 @@ class Graph(object):
                             span_port1 = port1.edges[key].glide(port1)
                             span_edge1 = port1.edges[key]
                         else:
-                            # print "span_port1 already set. Old:", span_port1, "   New:", port1.edges[key].glide(key)
-                            # print port1.edges
                             span_port1 = ""
                             span_edge1 = ""
                             break
@@ -1401,16 +1390,9 @@ class Graph(object):
                             span_port2 = port2.edges[key].glide(port2)
                             span_edge2 = port2.edges[key]
                         else:
-                            # print "span_port2 already set. Old:", span_port2, "   New:", port2.edges[key].glide(key)
-                            # print port2.edges
                             span_port2 = ""
                             span_edge2 = ""
                             break
-
-                # print "Opposite ports:"
-                # print span_port1
-                # print span_port2
-
 
                 if span_port1 != "" and span_port2 != "": # Only if the spanning nodes are present do we continue calculations
                     x1 = span_port1.node.attributes["weight"]
@@ -1427,17 +1409,6 @@ class Graph(object):
                     # print "percentage difference:", percent_diff
 
                     if est_split_weight_1 < 0 or est_split_weight_2 < 0:
-                        # print edge
-                        # print node1, "weight:", n1
-                        # print node2, "weight:", n2
-
-                        # print span_port1
-                        # print span_port2
-                        # print "n1:", n1
-                        # print "n2:", n2
-                        # print "x1:", x1
-                        # print "x2:", x2
-
                         flagged_splits.append(edge)
                         # if port1 == port2:
                         #     print "Inverted duplication with negatives"
@@ -1475,14 +1446,8 @@ class Graph(object):
                         #     print "est_split_weight_2:",est_split_weight_2
                         #     print "-----------"
 
-
-
-                        
-                    # print "-----------"
-
-                    # if counter > 6:
-                    #     break
                     counter += 1
+
         print "total:",counter
 
         print "flagged:",len(flagged_splits)
@@ -1521,7 +1486,7 @@ class Graph(object):
 
         groups = []
         for fusion1 in list_of_fusion_name_tuples:
-            print "groups before:", groups
+            # print "groups before:", groups
             matching_groups = []
             for index in xrange(len(groups)):
                 group = groups[index]
@@ -1529,8 +1494,8 @@ class Graph(object):
                     if (self.check_overlapping_genes(fusion1[0],fusion2[0]) and self.check_overlapping_genes(fusion1[1],fusion2[1])) or (self.check_overlapping_genes(fusion1[0],fusion2[1]) and self.check_overlapping_genes(fusion1[1],fusion2[0])):
                         matching_groups.append(index)
                         break
-            print "fusion1", fusion1
-            print "matching_groups:",matching_groups
+            # print "fusion1", fusion1
+            # print "matching_groups:",matching_groups
 
             if len(matching_groups) > 0:
                 if len(matching_groups) > 1:
@@ -1546,8 +1511,8 @@ class Graph(object):
             if len(group) > 0:
                 final_groups.append(group)
 
-        for item in final_groups:
-            print item
+        # for item in final_groups:
+        #     print item
 
 
         return final_groups
