@@ -582,7 +582,7 @@ class Graph(object):
         f = open(annotation_file)
         counter = 0
         successes = 0
-        print "sample gene names used:"
+        # print "sample gene names used:"
         for line in f:
             fields = line.strip().split()
             chrom = fields[0]
@@ -599,8 +599,8 @@ class Graph(object):
                 for node_name in all_nodes_on_gene:
                     self.annotation_by_node[node_name] = self.annotation_by_node.get(node_name,[]) + [gene_name]
             counter += 1
-            if counter < 5:
-                print gene_name
+            # if counter < 5:
+            #     print gene_name
         f.close()
 
 
@@ -700,7 +700,10 @@ class Graph(object):
         edges = self.edges_from_path(path)
         for edge in edges:
             if edge.spansplit == "split":
-                split_weights.append(edge.weight)
+                if edge.weight == int(edge.weight):
+                    split_weights.append(int(edge.weight))
+                else:
+                    split_weights.append(edge.weight)
 
         ################# This is the old way before I started encoding spansplit as an edge property
         # num_splits = -1
@@ -1488,6 +1491,71 @@ class Graph(object):
 
         print "//////////////////////////////////////////////////////"
 
+    def check_overlapping_genes(self,gene1,gene2):
+        
+        if gene1 == gene2:
+            return True
+        annot1 = self.annotation[gene1]
+        annot2 = self.annotation[gene2]
+
+        if annot1["chrom"] == annot2["chrom"] and not (annot1["stop"] < annot2["start"] or annot2["stop"] < annot1["start"]):
+            return True
+        else:
+            return False
+
+
+
+    def group_redundant_gene_fusions_by_overlapping_genes(self,list_of_fusion_name_tuples):
+
+        print "all fusions:", list_of_fusion_name_tuples
+        
+        # loop through all fusions in list_of_fusion_name_tuples
+        # for each, check if it matches an existing group
+
+        # if it matches multiple groups, combine those groups
+        # add the new fusion to the matching group or combined group
+        # if no matching group, make it a new group
+
+        # print "check: True = ", self.check_overlapping_genes("AC023590.1","SAMD12")
+        # print "check: False = ", self.check_overlapping_genes("MTBP","SAMD12")
+
+        groups = []
+        for fusion1 in list_of_fusion_name_tuples:
+            print "groups before:", groups
+            matching_groups = []
+            for index in xrange(len(groups)):
+                group = groups[index]
+                for fusion2 in group:
+                    if (self.check_overlapping_genes(fusion1[0],fusion2[0]) and self.check_overlapping_genes(fusion1[1],fusion2[1])) or (self.check_overlapping_genes(fusion1[0],fusion2[1]) and self.check_overlapping_genes(fusion1[1],fusion2[0])):
+                        matching_groups.append(index)
+                        break
+            print "fusion1", fusion1
+            print "matching_groups:",matching_groups
+
+            if len(matching_groups) > 0:
+                if len(matching_groups) > 1:
+                    for index in matching_groups[1:]:
+                        groups[matching_groups[0]] = groups[matching_groups[0]] + groups[index]
+                        groups[index] = []
+                groups[matching_groups[0]].append(fusion1)
+            else:
+                groups.append([fusion1])
+
+        final_groups = []
+        for group in groups:
+            if len(group) > 0:
+                final_groups.append(group)
+
+        for item in final_groups:
+            print item
+
+
+        return final_groups
+        
+
+
+        # Return a list of lists with the gene fusions
+
     def search_for_fusions(self,gene_pair_list_file,output_fusion_report_file):
         f=open(gene_pair_list_file)
         
@@ -1526,13 +1594,16 @@ class Graph(object):
         f.close()
         print "Found evidence of %d gene fusions out of the list of %d given:" % (total_supported_fusions,total_putative_fusions)
 
+        # groups = self.group_redundant_gene_fusions(paths_dict_by_fusion_name, split_edges_only = True)
+        list_of_fusion_name_tuples = paths_dict_by_fusion_name.keys()
+        groups = self.group_redundant_gene_fusions_by_overlapping_genes(list_of_fusion_name_tuples)
 
-        groups = self.group_redundant_gene_fusions(paths_dict_by_fusion_name, split_edges_only = True)
         final_reports = []
         num_split_RNA_reads = []
         redundant_fusions = {}
         for group in groups:
             gene_lengths = {}
+            RNA_counts = {}
             for fusion_name in group:
                 # print reports_dict_by_fusion_name[fusion_name]
                 # print reports_dict_by_fusion_name[fusion_name]["info"]
@@ -1543,13 +1614,21 @@ class Graph(object):
                 length1 = annot1["stop"]-annot1["start"]
                 length2 = annot2["stop"]-annot2["start"]
                 gene_lengths[fusion_name] = length1 + length2
-            # print gene_lengths
+
+                RNA_counts[fusion_name] = int(reports_dict_by_fusion_name[fusion_name]["info"][0])
+            # max_fusion_name = ""
+            # max_gene_length = 0
+            # for fusion_name in gene_lengths:
+            #     if gene_lengths[fusion_name] > max_gene_length:
+            #         max_fusion_name = fusion_name
+            #         max_gene_length = gene_lengths[fusion_name]
+            
             max_fusion_name = ""
-            max_gene_length = 0
+            max_RNA_count = 0
             for fusion_name in gene_lengths:
-                if gene_lengths[fusion_name] > max_gene_length:
+                if RNA_counts[fusion_name] > max_RNA_count or (RNA_counts[fusion_name] == max_RNA_count and gene_lengths[fusion_name] > gene_lengths[max_fusion_name]):
                     max_fusion_name = fusion_name
-                    max_gene_length = gene_lengths[fusion_name]
+                    max_RNA_count = RNA_counts[fusion_name]
             # print "MAX:", max_fusion_name,max_gene_length
             redundant_fusions[max_fusion_name] = set(group)-set([max_fusion_name])
 
@@ -1558,7 +1637,7 @@ class Graph(object):
 
 
         f_output_fusion_report = open(output_fusion_report_file,"w")
-        f_output_fusion_report.write("gene_1\tgene2\tRNA_split_read_count\tDNA_split_reads_at_variants\ttotal_fusion_gene_length\tstrand_gene_1\tstrand_gene_2\tnumber_of_splits_to_thread_through\tminimum_spansplit_weights_along_path\tother_fusions_through_same_variant(s)\n")
+        f_output_fusion_report.write("gene_1\tstrand_gene_1\tgene2\tstrand_gene_2\tRNA_split_read_count\tnumber_of_splits_to_thread_through\tDNA_split_reads_at_variants\ttotal_fusion_gene_length\tminimum_spansplit_weights_along_path\tother_fusions_through_same_variant(s)\n")
 
         import numpy as np
         sorted_indices = np.argsort(num_split_RNA_reads)[::-1]
@@ -1569,8 +1648,16 @@ class Graph(object):
             for item in redundant_fusions[(report["Gene1"], report["Gene2"])]:
                 alternate_names.append(item[0] + "=" + item[1])
             rna_split_read_count = int(report["info"][0])
-            f_output_fusion_report.write("%s\t%s\t%d\t%s\t%d\t%s\t%s\t%d\t%f\t%s\n" % (report["Gene1"], report["Gene2"], rna_split_read_count, ",".join(all_split_weights),report["distance"],report["Gene1_direction"],report["Gene2_direction"],report["number_of_splits"], self.min_weight(report["path"]), ",".join(alternate_names)   ))
-
+            if report["Gene1_direction"] == "Reverse":
+                report["Gene1_direction"] = "a"
+            else:
+                report["Gene1_direction"] = "s"
+            if report["Gene2_direction"] == "Reverse":
+                report["Gene2_direction"] = "a"
+            else:
+                report["Gene2_direction"] = "s"
+            f_output_fusion_report.write("%s\t%s\t%s\t%s\t%d\t%d\t%s\t%d\t%d\t%s\n" % (report["Gene1"], report["Gene1_direction"],report["Gene2"], report["Gene2_direction"], rna_split_read_count, report["number_of_splits"], ",".join(all_split_weights), report["distance"], int(self.min_weight(report["path"])), ",".join(alternate_names)   ))
+        print "s = sense, a = anti-sense"
         f_output_fusion_report.close()
 
         # print "%d of these are through unique paths" % (len())
