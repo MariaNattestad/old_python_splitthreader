@@ -1,0 +1,73 @@
+#!/bin/bash
+# USAGE="web_pipeline DIRECTORY"
+# if [ -z "$1" ]
+#   then
+#     echo "ERROR in web_pipeline: No directory given"
+#     echo "Usage:"
+#     echo $USAGE
+#     exit
+# fi
+
+# DIRECTORY=${1?"$USAGE"}
+
+
+DIRECTORY=/Applications/XAMPP/htdocs/splitthreader/user_data/example2
+
+# Author: Maria Nattestad
+# Email: mnattest@cshl.edu
+
+
+# source python_env/bin/activate
+
+# For each genome, could be set by dropdown menu or uploaded as custom genome
+GENOME=$DIRECTORY/genome_file
+ANNOTATION=$DIRECTORY/annotation
+
+# Core file uploaded by user
+VARIANTS=$DIRECTORY/variants.bedpe
+
+# Optional:
+# The user can upload a file with a list of regions to do evolution on
+EVOLUTION_REGION_LIST=$DIRECTORY/evolution_region_list
+
+# ERBB2 example:
+# SplitThreader.py Evolution --variants $VARIANTS --genome $GENOME --out evolution_test --chrom 17 --start 37000000 --end 41000000
+
+while read REGION;
+do
+read -ra ADDR <<< "$REGION"
+echo SplitThreader.py Evolution --variants $VARIANTS --genome $GENOME --out ${ADDR[0]} --chrom ${ADDR[1]} --start ${ADDR[2]} --end ${ADDR[3]}
+SplitThreader.py Evolution --variants $VARIANTS --genome $GENOME --out ${ADDR[0]} --chrom ${ADDR[1]} --start ${ADDR[2]} --end ${ADDR[3]}
+done < $EVOLUTION_REGION_LIST
+
+
+# Optional:
+# The user can upload a file with a list of putative gene fusions to search for
+GENE_FUSION_LIST=$DIRECTORY/gene_fusions
+SplitThreader.py Fusions --variants $VARIANTS --genome $GENOME --annotation $ANNOTATION --list $GENE_FUSION_LIST --out $DIRECTORY/SplitThreader
+
+
+
+cat $VARIANTS | cut -f 1,2,4,5,7,9,10,11,12,13,14 | awk 'BEGIN{print "chrom1,pos1,chrom2,pos2,variant_name,strand1,strand2,type,split,span1,span2"}{$1=$1;print}' OFS="," > $DIRECTORY/variants.csv
+
+
+# Copy numbers for FLOW: variant and CNV concordance evaluation
+COVERAGE=$DIRECTORY/copy_numbers.segmented.tab
+
+SplitThreader.py Flow --variants $VARIANTS --genome $GENOME --coverage $COVERAGE
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
