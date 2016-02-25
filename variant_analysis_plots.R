@@ -1,15 +1,15 @@
 library(ggplot2)
 
 ##################
-# dataset_files <- c("/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Feb7.SRVs.csv","/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Feb7_10_reads.SRVs.csv")
-# dataset_names <- c("5 reads","10 reads")
-# output_filename <- "/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles.PLOT.SRVs.Feb7.5_vs_10_reads.png"
+dataset_files <- c("/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Feb7.SRVs.csv","/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Feb7_10_reads.SRVs.csv")
+dataset_names <- c("5 reads","10 reads")
+output_filename <- "/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles.PLOT.SRVs.Feb7.5_vs_10_reads.png"
 ##################
 
 ##################
-dataset_files <- c("/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Oct28.SRVs.csv","/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Feb7_10_reads.SRVs.csv")
-dataset_names <- c("Oct28","Feb7")
-output_filename <- "/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles.PLOT.SRVs.Oct28_vs_Feb7_10_reads.png"
+# dataset_files <- c("/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Oct28.SRVs.csv","/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Feb7_10_reads.SRVs.csv")
+# dataset_names <- c("Oct28","Feb7")
+# output_filename <- "/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles.PLOT.SRVs.Oct28_vs_Feb7_10_reads.png"
 ##################
 
 
@@ -45,15 +45,15 @@ dev.off()
 library(ggplot2)
 
 ##################
-# dataset_files <- c("/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Feb7.CNVs.tab","/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Feb7_10_reads.CNVs.tab")
-# dataset_names <- c("5 reads","10 reads")
-# output_filename <- "/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles.PLOT.CNVs.Feb7.5_vs_10_reads.png"
+dataset_files <- c("/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Feb7.CNVs.tab","/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Feb7_10_reads.CNVs.tab")
+dataset_names <- c("5 reads","10 reads")
+output_filename <- "/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles.PLOT.CNVs.Feb7.5_vs_10_reads.png"
 ##################
 
 ##################
-dataset_files <- c("/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Oct28.CNVs.tab","/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Feb7_10_reads.CNVs.tab")
-dataset_names <- c("Oct28","Feb7")
-output_filename <- "/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles.PLOT.CNVs.Oct28_vs_Feb7_10_reads.png"
+# dataset_files <- c("/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Oct28.CNVs.tab","/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles_Feb7_10_reads.CNVs.tab")
+# dataset_names <- c("Oct28","Feb7")
+# output_filename <- "/Applications/XAMPP/htdocs/splitthreader/user_data/example2/CNV_SRV_concordance_Sniffles.PLOT.CNVs.Oct28_vs_Feb7_10_reads.png"
 ##################
 
 

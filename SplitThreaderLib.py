@@ -1569,12 +1569,29 @@ class Graph(object):
         fout.write("chrom1,pos1,stop1,chrom2,pos2,stop2,variant_name,score,strand1,strand2,type,split,span1,span2,flow_category,description\n")
         for line in f:
             fields = line.strip().split()
-        
             variant_name = fields[6]
             fout.write(",".join(fields) + "," + reports.get(variant_name, "VARIANT_NOT_IN_GRAPH") + "\n" )
         f.close()
         fout.close()
         
+    def filter_sniffles_file_by_CNV_presence(self,reports, sniffles_filename, output_filename):
+        f = open(sniffles_filename)
+        fout = open(output_filename, 'w')
+
+        num_variants_included = 0
+
+        for line in f:
+            fields = line.strip().split()
+            variant_name = fields[6]
+            score = reports.get(variant_name,"Missing")
+            if score == "Missing":
+                print "WARNING: Variant not found:", variant_name
+            elif score.find("Perfect") >= 0 or score.find("Great") >= 0:
+                num_variants_included += 1
+                fout.write("\t".join(fields) + "\t" + reports.get(variant_name, "VARIANT_NOT_IN_GRAPH") + "\n" )
+
+        f.close()
+        fout.close()
 
     def segmented_coverage_to_CNV_calls_with_diff(self,coverage_file,cov_diff_threshold_to_split=0):
         # MUST BE SORTED BY CHROMOSOME THEN BY START POSITION
@@ -1804,11 +1821,8 @@ class Graph(object):
 
         breakpoints_from_copy_number = self.segmented_coverage_to_CNV_calls_with_diff(coverage_file,cov_diff_threshold_to_split=0)
 
-
         SRV_score_breakpoint_1 = {}
         SRV_score_breakpoint_2 = {}
-
-
 
         for edge in self.edges:
             if edge.spansplit == "split":
@@ -1836,11 +1850,10 @@ class Graph(object):
                 SRV_score_breakpoint_1[edge.variant_name] = 0
                 SRV_score_breakpoint_2[edge.variant_name] = 0
 
-
                 num_CNV_in_right_direction = 0
                 for CNV in breakpoints_from_copy_number.get(chrom1,[]):
                     if abs(pos1 - CNV) < max_variant_CNV_distance:
-                        SRV_score_breakpoint_1[edge.variant_name] = 1
+                        SRV_score_breakpoint_1[edge.variant_name] = max([1,SRV_score_breakpoint_1[edge.variant_name]])
                         diff = breakpoints_from_copy_number[chrom1][CNV][1] - breakpoints_from_copy_number[chrom1][CNV][0]
                         if port_name_1[1] =="start" and diff > 0:
                             # print "1", diff
@@ -1856,7 +1869,7 @@ class Graph(object):
                 num_CNV_in_right_direction = 0
                 for CNV in breakpoints_from_copy_number.get(chrom2,[]):
                     if abs(pos2 - CNV) < max_variant_CNV_distance:
-                        SRV_score_breakpoint_2[edge.variant_name] = 1
+                        SRV_score_breakpoint_2[edge.variant_name] = max([1,SRV_score_breakpoint_2[edge.variant_name]])
                         diff = breakpoints_from_copy_number[chrom2][CNV][1] - breakpoints_from_copy_number[chrom2][CNV][0]
                         if port_name_2[1] =="start" and diff > 0:
                             # print "2", diff
@@ -1865,10 +1878,10 @@ class Graph(object):
                         elif port_name_2[1] =="stop" and diff < 0:
                             # print "2", diff
                             SRV_score_breakpoint_2[edge.variant_name] = 2
-                            num_CNV_in_right_direction +=1 
+                            num_CNV_in_right_direction +=1
                 if num_CNV_in_right_direction == 1:
                     SRV_score_breakpoint_2[edge.variant_name] = 3
-                
+
 
         reports = {}
         for variant_name in SRV_score_breakpoint_1:
@@ -1895,7 +1908,6 @@ class Graph(object):
             else:
                 summary[variant_name] = "Poor,explanatory CNVs only on one side"
 
-
         return summary
 
 
@@ -1909,7 +1921,7 @@ class Graph(object):
 
 
 
-   def balance_flow_on_nodes(self):
+    def balance_flow_on_nodes(self):
         all_nodes = self.nodes
         for node_name in all_nodes:
             node = all_nodes[node_name]

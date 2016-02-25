@@ -54,15 +54,32 @@ def fusions(args):
 
 
 def evolution(args):
-    chromosome = args.zoom_region_chrom
-    start = args.zoom_region_start
-    end = args.zoom_region_end
+
+    coverage_file = args.coverage
+    sniffles_filename = args.variants
+    genome_file = args.genome_file
     output_prefix = args.output_prefix
-    depth_limit = args.depth_limit
 
-    g = initialize(args)
+    g = Graph()
+    g.read_copy_number_profile_and_sniffles(sniffles_filename=variants_filename,genome_file=genome_file,coverage_file=coverage_file)
 
-    g.local_evolution(chromosome,start,end,output_prefix,degree=3,min_weight_required=10,depth_limit=depth_limit)
+
+    g.count_span_vs_split_edges()
+
+
+    ################################################################################################
+    # OLD:
+
+    # chromosome = args.zoom_region_chrom
+    # start = args.zoom_region_start
+    # end = args.zoom_region_end
+    # output_prefix = args.output_prefix
+    # depth_limit = args.depth_limit
+
+    # g = initialize(args)
+
+    # g.local_evolution(chromosome,start,end,output_prefix,degree=3,min_weight_required=10,depth_limit=depth_limit)
+
 
 
 def flow(args):
@@ -71,7 +88,7 @@ def flow(args):
     sniffles_filename = args.variants
     genome_file = args.genome_file
     output_prefix = args.output_prefix
-    max_variant_CNV_distance = 100000
+    max_variant_CNV_distance = 500000
 
     g = initialize(args)
 
@@ -119,7 +136,10 @@ def flow(args):
     g.output_CNVs_with_quality_and_SRV_concordance_analysis(coverage_file=coverage_file, CNV_features=CNV_features, CNVs_by_SRV_evidence=CNVs_by_SRV_evidence,output_filename = output_prefix + ".CNVs.tab")
 
 
-    
+
+    g.filter_sniffles_file_by_CNV_presence(reports = SRVs, sniffles_filename = sniffles_filename, output_filename = output_prefix + ".filtered_SRVs.bedpe") 
+
+
 
 
 
@@ -154,11 +174,12 @@ def main():
     #  Parameters for "evolution" program: Reconstructing history of mutations in a region of the genome
     parser_evolution.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants",required=True)
     parser_evolution.add_argument("--genome",help="genome file where column 1 is chromosome and column 2 is the length of that chromosome",dest="genome_file",required=True)
+    parser_evolution.add_argument("--coverage",help="coverage bed file with columns: chr\tstart\tend\tunsegmented_coverage\tsegmented_coverage. MUST BE SORTED BY CHROMOSOME THEN BY START POSITION, sort -k1,1 -k2,2n will do this",dest="coverage",required=True)
     parser_evolution.add_argument("--out",help="prefix for all output files",dest="output_prefix",required=True)
-    parser_evolution.add_argument("--chrom",help="which chromosome to focus historical reconstruction on",dest="zoom_region_chrom",type=str,required=True)
-    parser_evolution.add_argument("--start",help="which start position within the chromosome to focus historical reconstruction on",dest="zoom_region_start",type=int,required=True)
-    parser_evolution.add_argument("--end",help="which end position within the chromosome to focus historical reconstruction on",dest="zoom_region_end",type=int,required=True)
-    parser_evolution.add_argument("--depth",help="Number of edges deep to search in the graph. Influences runtime. Default = 30",type=int,dest="depth_limit",default=30)
+    # parser_evolution.add_argument("--chrom",help="which chromosome to focus historical reconstruction on",dest="zoom_region_chrom",type=str,required=True)
+    # parser_evolution.add_argument("--start",help="which start position within the chromosome to focus historical reconstruction on",dest="zoom_region_start",type=int,required=True)
+    # parser_evolution.add_argument("--end",help="which end position within the chromosome to focus historical reconstruction on",dest="zoom_region_end",type=int,required=True)
+    # parser_evolution.add_argument("--depth",help="Number of edges deep to search in the graph. Influences runtime. Default = 30",type=int,dest="depth_limit",default=30)
     parser_evolution.set_defaults(func=evolution)
 
     parser_flow.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants",required=True)
