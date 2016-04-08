@@ -11,7 +11,11 @@
 # DIRECTORY=${1?"$USAGE"}
 
 
-DIRECTORY=/Applications/XAMPP/htdocs/splitthreader/user_data/example2
+DIRECTORY=/Applications/XAMPP/htdocs/splitthreader/user_data/example1
+
+
+# DIRECTORY=~/Dropbox/FIGURES/Flow_variant_scoring
+
 
 # Author: Maria Nattestad
 # Email: mnattest@cshl.edu
@@ -23,44 +27,67 @@ DIRECTORY=/Applications/XAMPP/htdocs/splitthreader/user_data/example2
 GENOME=$DIRECTORY/genome_file
 ANNOTATION=$DIRECTORY/annotation
 
-# Core file uploaded by user
-VARIANTS=$DIRECTORY/variants.bedpe
+# Core files uploaded by user
+VARIANTS=$DIRECTORY/Sniffles_March9.spansplit.columns.bedpe #variants.bedpe # Sniffles_Feb7.spansplit.columns.10_reads.bedpe                       #
+
+# VARIANTS=$DIRECTORY/Sniffles_Mar9.primary_chrom.over10kb.merge_within_1kb.darkzone_filtered.bedpe #THIS STILL NEEDS SPANSPLIT COUNTS
+
+COVERAGE=$DIRECTORY/copy_numbers.segmented.tab
+
+# COVERAGE=$DIRECTORY/SKBR3_bwamem_hg19.position_sorted.mq60.coverage.1kb.csv.segmented.alpha_e-2.tab
+
 
 # Optional:
 # The user can upload a file with a list of regions to do evolution on
 EVOLUTION_REGION_LIST=$DIRECTORY/evolution_region_list
+# EVOLUTION_REGION_LIST=$DIRECTORY/ERBB2_only
 
 # ERBB2 example:
 # SplitThreader.py Evolution --variants $VARIANTS --genome $GENOME --out evolution_test --chrom 17 --start 37000000 --end 41000000
 
+# SplitThreader.py Score --variants $VARIANTS --genome $GENOME --coverage $COVERAGE --out $DIRECTORY/SplitThreader.stringent --dist 10000
+# SplitThreader.py Score --variants $VARIANTS --genome $GENOME --coverage $COVERAGE --out $DIRECTORY/SplitThreader.sensitive --dist 100000
+
+
+# cat SplitThreader.stringent.SRVs.csv | grep "Perfect" | perl -MList::Util=shuffle -e 'print shuffle<STDIN>' | head -10 > SplitThreader.stringent.SRVs.csv.Perfect_selection
+# cat SplitThreader.sensitive.SRVs.csv | grep "TRA" | grep "Bad" | perl -MList::Util=shuffle -e 'print shuffle<STDIN>' | head -10 > SplitThreader.sensitive.SRVs.csv.Worst_selection
+
+# spansplit_to_bed SplitThreader.stringent.SRVs.csv.Perfect_selection
+# spansplit_to_bed SplitThreader.sensitive.SRVs.csv.Worst_selection
+
+
+
+#SplitThreader.py Flow --variants $VARIANTS --genome $GENOME --coverage $COVERAGE --out $DIRECTORY/SplitThreader
+
+
+#SplitThreader.py FlowGene --variants $VARIANTS --genome $GENOME --annotation $ANNOTATION --out $DIRECTORY/SplitThreader --gene ERBB2
+
+
+# Use SplitThreader_flow_around_gene.R to plot
+
+
+# FILTERED_VARIANTS=$DIRECTORY/SplitThreader.filtered_SRVs.bedpe
+
+
+######### TESTING:###########
+
+# EVOLUTION_REGION_LIST=$DIRECTORY/ERBB2_only
+
+
 while read REGION;
 do
 read -ra ADDR <<< "$REGION"
-echo SplitThreader.py Evolution --variants $VARIANTS --genome $GENOME --out ${ADDR[0]} --chrom ${ADDR[1]} --start ${ADDR[2]} --end ${ADDR[3]}
-SplitThreader.py Evolution --variants $VARIANTS --genome $GENOME --out ${ADDR[0]} --chrom ${ADDR[1]} --start ${ADDR[2]} --end ${ADDR[3]}
+echo SplitThreader.py Evolution --variants $VARIANTS --genome $GENOME --coverage $COVERAGE --out ${ADDR[0]} --chrom ${ADDR[1]} --start ${ADDR[2]} --end ${ADDR[3]}
+SplitThreader.py Evolution --variants $VARIANTS --genome $GENOME --coverage $COVERAGE --out $DIRECTORY/${ADDR[0]} --chrom ${ADDR[1]} --start ${ADDR[2]} --end ${ADDR[3]}
 done < $EVOLUTION_REGION_LIST
 
 
-# Optional:
-# The user can upload a file with a list of putative gene fusions to search for
+# # Optional:
+# # The user can upload a file with a list of putative gene fusions to search for
+# scp b:/seq/schatz/SKBR3/isoseq_fusion_analysis/step5_annotate_and_summarize_gene_fusions/all_sizes.quivered_hq.filtered_by_mapq_60.fusion_finder.mtc99.mlcbp10.mdbl1Mb.bedpe.with_abundance.pair.genes.summary.2_fl_reads.bedpe.list gene_fusions
+
 GENE_FUSION_LIST=$DIRECTORY/gene_fusions
 SplitThreader.py Fusions --variants $VARIANTS --genome $GENOME --annotation $ANNOTATION --list $GENE_FUSION_LIST --out $DIRECTORY/SplitThreader
-
-
-
-cat $VARIANTS | cut -f 1,2,4,5,7,9,10,11,12,13,14 | awk 'BEGIN{print "chrom1,pos1,chrom2,pos2,variant_name,strand1,strand2,type,split,span1,span2"}{$1=$1;print}' OFS="," > $DIRECTORY/variants.csv
-
-
-# Copy numbers for FLOW: variant and CNV concordance evaluation
-COVERAGE=$DIRECTORY/copy_numbers.segmented.tab
-
-SplitThreader.py Flow --variants $VARIANTS --genome $GENOME --coverage $COVERAGE
-
-
-
-
-
-
 
 
 

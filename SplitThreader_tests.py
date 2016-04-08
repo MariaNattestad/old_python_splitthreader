@@ -207,12 +207,40 @@ class TestGraph(unittest.TestCase):
         self.g3.subtract(path,minweight)
         self.assertEqual(self.g3.min_weight(path),0)
 
-class TestSplitThreader(unittest.TestCase):
+class TestParsimony(unittest.TestCase):
     def setUp(self):
-        self.g = Graph()
-    def test_read_sniffles(self):
-        self.g.read_sniffles("tests/sniffles_1.bedpe",genome_file="tests/human_hg19.genome")
-        self.g.print_spansplit_edges()
+        self.g1 = Graph()
+        self.g1.create_nodes_with_attributes({"A":{"chrom":"1","start":10000,"stop":20000}, "B":{"chrom":"1","start":20000,"stop":30000}, "C":{"chrom":"1","start":30000,"stop":40000}, "D":{"chrom":"1","start":40000,"stop":50000}, "E":{"chrom":"1","start":50000,"stop":60000}})
+        self.g1.create_edges([   (("A","stop"),("B","start")),    (("B","stop"),("C","start")),    (("C","stop"),("D","start")),     (("D","stop"),("E","start"))   ], [10,50,10,5], spansplit="span")
+
+        self.g1.create_nodes_with_attributes({"B2":{"chrom":"2","start":100000,"stop":200000},   "C2":{"chrom":"2","start":200000,"stop":300000},     "C3":{"chrom":"2","start":300000,"stop":400000}, })
+        self.g1.create_edges([   (("B2","stop"),("C2","start")),   (("C2","stop"),("C3","start"))   ], [100,100], spansplit="span")
+
+        self.g1.create_edges([   (("B","start"),("B2","start")),    (("C","start"),("C2","start")),    (("C","stop"),("C3","start"))  ], [40, 50,90], spansplit="split")
+
+    def test_nodes_within_genome_interval(self):
+        self.assertTrue( set(map(str,self.g1.nodes_within_genome_interval(chromosome="1",start=15000,end=45000))) == set(["A","B","C","D"]))
+    
+    def test_subgraph(self):
+        # primary_nodes = self.g1.nodes_within_genome_interval(chromosome="1",start=15000,end=45000)
+        # print self.g1.subgraph_from_nodes(primary_nodes)
+
+        s1 = self.g1.special_subgraph_from_genome_interval(chromosome="1",start=15000,end=45000,degree=5)
+        self.assertTrue( set(s1.nodes)-set(["Portal"]) == set(["A","B","C","D","B2","C2","C3"])  )
+
+        portal_port = s1.nodes["Portal"].ports["stop"]
+        ports_connected_to_portals = map(str,portal_port.edges.keys())
+
+        self.assertTrue( set(ports_connected_to_portals) == set(["A:start","D:stop","B2:stop","C3:stop", "C2:stop"]))
+        
+        
+        
+    def test_local_parsimony(self):
+        self.g1.local_parsimony(chrom="1",start=15000,end=45000)
+
+
+
+
 
 def main():
     unittest.main()

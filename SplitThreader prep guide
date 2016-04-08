@@ -1,0 +1,17 @@
+SplitThreader prep guide
+
+Run CBS_LR to get segmented copy number data from a 
+
+
+bedtools bamtobed $BAM > $BAM.bed
+
+# Circular binary segmentation for long reads with a 1000 bp bin size (minimum segment length is 5X this bin size)
+CBS-LR $BAM.bed 1000
+
+
+Upload CBS-LR output (segmented_coverage.csv) and Sniffles output (variants.bedpe) to SplitThreader on the web
+
+
+
+
+

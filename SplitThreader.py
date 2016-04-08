@@ -26,7 +26,7 @@ def initialize(args):
 
     g = Graph()
     g.read_sniffles(variants_filename,genome_file=genome_file)
-    g.count_span_vs_split_edges()
+    # g.count_span_vs_split_edges()
     
     return g
 
@@ -52,43 +52,13 @@ def fusions(args):
 
     g.search_for_fusions(gene_pair_list_file,output_prefix=output_prefix)
 
-
-def evolution(args):
-
-    coverage_file = args.coverage
-    sniffles_filename = args.variants
-    genome_file = args.genome_file
-    output_prefix = args.output_prefix
-
-    g = Graph()
-    g.read_copy_number_profile_and_sniffles(sniffles_filename=variants_filename,genome_file=genome_file,coverage_file=coverage_file)
-
-
-    g.count_span_vs_split_edges()
-
-
-    ################################################################################################
-    # OLD:
-
-    # chromosome = args.zoom_region_chrom
-    # start = args.zoom_region_start
-    # end = args.zoom_region_end
-    # output_prefix = args.output_prefix
-    # depth_limit = args.depth_limit
-
-    # g = initialize(args)
-
-    # g.local_evolution(chromosome,start,end,output_prefix,degree=3,min_weight_required=10,depth_limit=depth_limit)
-
-
-
-def flow(args):
+def score_variants(args):
 
     coverage_file = args.coverage
     sniffles_filename = args.variants
     genome_file = args.genome_file
     output_prefix = args.output_prefix
-    max_variant_CNV_distance = 500000
+    max_variant_CNV_distance = args.max_variant_CNV_distance
 
     g = initialize(args)
 
@@ -136,12 +106,161 @@ def flow(args):
     g.output_CNVs_with_quality_and_SRV_concordance_analysis(coverage_file=coverage_file, CNV_features=CNV_features, CNVs_by_SRV_evidence=CNVs_by_SRV_evidence,output_filename = output_prefix + ".CNVs.tab")
 
 
-
     g.filter_sniffles_file_by_CNV_presence(reports = SRVs, sniffles_filename = sniffles_filename, output_filename = output_prefix + ".filtered_SRVs.bedpe") 
 
 
+def flow_around_gene(args):
+    
+    annotation_filename = args.annotation_file
+    gene_name_column = args.gene_name_column
+    output_prefix = args.output_prefix
+    gene = args.gene
 
 
+    g = initialize(args)
+    g.read_annotation(annotation_filename,name_field=gene_name_column,by_node_access = False)
+
+    g.show_flow_around_gene(gene=gene,output_filename=output_prefix + "." + gene + ".flow.csv")
+
+
+
+def flow(args):
+
+    coverage_file = args.coverage
+    sniffles_filename = args.variants
+    genome_file = args.genome_file
+    output_prefix = args.output_prefix
+
+
+    # Pre-calculate flow_reports without biasing on copy number
+    pre = initialize(args)
+    SRVs = pre.score_SRVs(coverage_file=coverage_file,max_variant_CNV_distance=100000)
+    flow_reports = pre.summarize_SRVs(SRVs)
+
+
+
+    g = Graph()
+    CNV_breakpoints = g.read_copy_number_profile_and_sniffles(sniffles_filename=sniffles_filename,genome_file=genome_file,coverage_file=coverage_file)
+
+    
+
+
+    g.count_span_vs_split_edges()
+
+    g.score_variants_by_contribution_to_flow_on_nodes()
+
+    g.count_balanced_nodes(verbose=True)
+
+    g.output_flow_on_nodes(output_filename=output_prefix + ".before_balancing.node_flows.csv")
+
+    # Balance 10 times since it is an iterative process, allowing the copy numbers to settle nicely
+    print "BALANCE"
+    unbalanceable_nodes = g.balance_flow_on_nodes()
+    print "BALANCE"
+    unbalanceable_nodes = g.balance_flow_on_nodes()
+    print "BALANCE"
+    unbalanceable_nodes = g.balance_flow_on_nodes()
+    print "BALANCE"
+    unbalanceable_nodes = g.balance_flow_on_nodes()
+    print "BALANCE"
+    unbalanceable_nodes = g.balance_flow_on_nodes()
+    print "BALANCE"
+    unbalanceable_nodes = g.balance_flow_on_nodes()
+    print "BALANCE"
+    unbalanceable_nodes = g.balance_flow_on_nodes()
+    print "BALANCE"
+    unbalanceable_nodes = g.balance_flow_on_nodes()
+    print "BALANCE"
+    unbalanceable_nodes = g.balance_flow_on_nodes()
+    print "BALANCE"
+    unbalanceable_nodes = g.balance_flow_on_nodes()
+
+
+    g.count_balanced_nodes(verbose=True)
+
+    g.output_flow_on_nodes(output_filename=output_prefix + ".after_balancing.node_flows.csv")
+
+
+    num_zero = 0
+    for edge in g.edges:
+        if edge.spansplit=="split":
+            if edge.weight < 10:
+                num_zero += 1
+
+    print num_zero
+
+    print "unbalanceable_nodes:", len(unbalanceable_nodes)
+
+    g.output_variants_from_graph(output_filename = output_prefix + ".balanced_variants.csv",flow_reports = flow_reports)
+
+    g.output_nodes_as_boxes(output_filename = output_prefix + ".node_boxes.csv")
+
+
+
+
+
+
+    ###############################
+    # old regions analysis:
+
+    # suitable_regions = g.find_suitable_regions(CNV_breakpoints,genome_file=genome_file)
+    # g.evaluate_regions(suitable_regions,output_filename=output_prefix + ".regions")
+
+def evolution(args):
+    
+    coverage_file = args.coverage
+    variants_filename = args.variants
+    genome_file = args.genome_file
+    output_prefix = args.output_prefix
+    snap_within_bin_resolution = 2 #args.snap_within_bin_resolution
+    CN_difference_threshold_to_split = 20 #args.CN_difference_threshold_to_split
+    verbose = True
+
+    g = Graph()
+
+    #############################################
+    #########   New Approach April 6:   #########
+    #############################################
+    # - Whole-genome
+    # - Snapping variants together to fit resolution of the copy number calls
+    # - Optional (Apply PageRank algorithm to balance the graph)
+    # - Create segments
+
+    # Read segmented copy number profile and variant calls to come up with a consensus set of breakpoints
+    # Then connect the nodes based on the nearby variants
+    g.create_graph(variants_filename=variants_filename, coverage_file=coverage_file, genome_file=genome_file, snap_within_bin_resolution=snap_within_bin_resolution,CN_difference_threshold_to_split=CN_difference_threshold_to_split,verbose=verbose)
+
+    # Hook up loose edges to portal (ends of chromosomes, CNVs, possibly as an error term, but leave that for later)
+   
+    # Create segments
+
+
+    #############################################
+    #############################################
+    #############################################
+
+
+    # chromosome = args.zoom_region_chrom
+    # start = args.zoom_region_start
+    # end = args.zoom_region_end
+    # depth_limit = args.depth_limit
+
+    # g = initialize(args)
+    # CNV_breakpoints = g.read_copy_number_profile_and_sniffles(sniffles_filename=variants_filename,genome_file=genome_file,coverage_file=coverage_file,cov_diff_threshold_to_split=10000000)
+
+    # g.cover_uncovered_nodes()
+    # unbalanceable_nodes = g.balance_flow_on_nodes()
+
+    # print unbalanceable_nodes
+
+    # g.output_nodes_as_boxes(output_filename = output_prefix + ".balanced_node_boxes.csv")
+
+    # g.output_variants_from_graph(output_filename = output_prefix + ".balanced_variants.csv")
+
+    # g.local_evolution(chromosome,start,end,output_prefix,degree=3,min_weight_required=10,depth_limit=depth_limit)
+    # g.real_parsimony(chromosome,start,end)
+
+    # g.bottom_up_evolution(chromosome, start, end, output_prefix=output_prefix,min_weight_required=10)
 
 def main():
     # Software description
@@ -152,7 +271,9 @@ def main():
     parser_check = subparsers.add_parser('check', help='Run sanity checks on graph (DO THIS FIRST)')
     parser_fusions = subparsers.add_parser('Fusions', help='Find gene fusions')
     parser_evolution = subparsers.add_parser('Evolution', help='Reconstruct history of a region by finding the most parsimonious set of paths through the graph')
-    parser_flow = subparsers.add_parser('Flow', help='Analyze variants for concordance with copy numbers')
+    parser_score_variants = subparsers.add_parser('Score', help='Analyze variants for concordance with copy numbers')
+    parser_flow = subparsers.add_parser('Flow', help='Analyze and balance flow across the graph')
+    parser_flow_around_gene = subparsers.add_parser('FlowGene', help='Show the flow surrounding a particular gene')
 
     # Parameters for basic checking of the graph
     parser_check.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants",required=True)
@@ -182,12 +303,30 @@ def main():
     # parser_evolution.add_argument("--depth",help="Number of edges deep to search in the graph. Influences runtime. Default = 30",type=int,dest="depth_limit",default=30)
     parser_evolution.set_defaults(func=evolution)
 
+    parser_score_variants.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants",required=True)
+    parser_score_variants.add_argument("--genome",help="genome file where column 1 is chromosome and column 2 is the length of that chromosome",dest="genome_file",required=True)
+    parser_score_variants.add_argument("--coverage",help="coverage bed file with columns: chr\tstart\tend\tunsegmented_coverage\tsegmented_coverage. MUST BE SORTED BY CHROMOSOME THEN BY START POSITION, sort -k1,1 -k2,2n will do this",dest="coverage",required=True)
+    parser_score_variants.add_argument("--dist",help="max variant-CNV distance",dest="max_variant_CNV_distance",type=int,required=True)
+    parser_score_variants.add_argument("--out",help="prefix for all output files",dest="output_prefix",required=True)
+    
+    parser_score_variants.set_defaults(func=score_variants)
+
+
     parser_flow.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants",required=True)
     parser_flow.add_argument("--genome",help="genome file where column 1 is chromosome and column 2 is the length of that chromosome",dest="genome_file",required=True)
     parser_flow.add_argument("--coverage",help="coverage bed file with columns: chr\tstart\tend\tunsegmented_coverage\tsegmented_coverage. MUST BE SORTED BY CHROMOSOME THEN BY START POSITION, sort -k1,1 -k2,2n will do this",dest="coverage",required=True)
     parser_flow.add_argument("--out",help="prefix for all output files",dest="output_prefix",required=True)
     parser_flow.set_defaults(func=flow)
 
+    parser_flow_around_gene.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants",required=True)
+    parser_flow_around_gene.add_argument("--genome",help="genome file where column 1 is chromosome and column 2 is the length of that chromosome",dest="genome_file",required=True)
+    parser_flow_around_gene.add_argument("--annotation",help="annotation file",dest="annotation_file",required=True)
+    parser_flow_around_gene.add_argument("--gene_name_column",help="which column (1-indexed) of annotation file contains the gene names you wish to search by?",type=int,dest="gene_name_column",default=8)
+    parser_flow_around_gene.add_argument("--out",help="prefix for all output files",dest="output_prefix",required=True)
+    parser_flow_around_gene.add_argument("--gene",help="gene to show flow around",dest="gene",required=True)
+
+    parser_flow_around_gene.set_defaults(func=flow_around_gene)
+    
 
 
     args=parser.parse_args()
@@ -196,6 +335,16 @@ def main():
 if __name__=="__main__":
     main()
 
+
+
+
+
+
+# Score and filter variants:
+# SplitThreader.py Score --variants /Applications/XAMPP/htdocs/splitthreader/user_data/example2/variants.bedpe --genome /Applications/XAMPP/htdocs/splitthreader/user_data/example2/genome_file --coverage /Applications/XAMPP/htdocs/splitthreader/user_data/example2/copy_numbers.segmented.tab --out Oct28
+
+# Now use the filtered variants:
+# SplitThreader.py Flow --variants /Applications/XAMPP/htdocs/splitthreader/user_data/example2/Oct28.filtered_SRVs.bedpe --genome /Applications/XAMPP/htdocs/splitthreader/user_data/example2/genome_file --coverage /Applications/XAMPP/htdocs/splitthreader/user_data/example2/copy_numbers.segmented.tab --out Oct28_filtered
 
 
 

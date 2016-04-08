@@ -141,7 +141,7 @@ class Graph(object):
             print node, self.nodes[node].attributes
     def print_edges(self):        
         for edge in self.edges:
-            print edge, edge.weight
+            print edge, edge.weight, edge.spansplit
 
     def create_nodes_with_attributes(self,node_attributes):
         for node_name in node_attributes:
@@ -249,9 +249,10 @@ class Graph(object):
 
 
 
-    def add_portal(self,portal_name="Portal"):
+    def add_portal(self,portal_name="Portal",all_ports=False,fill_to_flow = True):
         # Set up portals at the unconnected nodes
         portals = set()
+        portal_edge_weights = {}
         for node_name in self.nodes:
             no_start = False
             no_stop = False
@@ -260,7 +261,19 @@ class Graph(object):
             if len(self.nodes[node_name].ports["stop"].edges.values()) == 0:
                 no_stop = True
             if no_start and no_stop:
-                pass # Don't make a node into a portal if it has no edges
+                pass # Don't connect a node to a portal if it has no edges
+            elif all_ports == True:
+                portals.add(self.nodes[node_name].ports["start"])
+                portals.add(self.nodes[node_name].ports["stop"])
+            elif fill_to_flow == True:
+                sum_port1, sum_port2 = self.calculate_flow_on_node(node_name)
+                node_weight = self.nodes[node_name].weight
+                if sum_port1 < node_weight:
+                    portals.add(self.nodes[node_name].ports["start"])
+                    portal_edge_weights[self.nodes[node_name].ports["start"]] = node_weight - sum_port1
+                if sum_port2 < node_weight:
+                    portals.add(self.nodes[node_name].ports["stop"])
+                    portal_edge_weights[self.nodes[node_name].ports["stop"]] = node_weight - sum_port2
             elif no_start:
                 portals.add(self.nodes[node_name].ports["start"])
             elif no_stop:
@@ -268,7 +281,8 @@ class Graph(object):
 
         self.create_nodes_with_attributes({portal_name:{"chrom":"0","start":0,"stop":0,"x":0,"y":0}})
         for dead_end_port in portals:
-            self.create_edge(dead_end_port.node.name, dead_end_port.name, portal_name, "stop", float("inf"))
+            weight = portal_edge_weights.get(dead_end_port,float("inf"))
+            self.create_edge(dead_end_port.node.name, dead_end_port.name, portal_name, "stop", weight,spansplit="portal")
             # self.create_edge(node1,port1,node2,port2,weight):
         
         # self.print_edges()
@@ -290,23 +304,49 @@ class Graph(object):
     def port_from_path_item(self,item):
         node,port = item.split(":")
         return self.nodes[node].ports[port]
+
     def opposite_port_from_path_item(self,item):
         node,port = item.split(":")
         return self.nodes[node].ports[reverse(port)]
 
-    def min_weight(self,path):
-        edge_list = self.edges_from_path(path)
-        edge_dict = {}
-        for edge in edge_list:
-            edge_dict[edge] = edge_dict.get(edge,0) + 1
-
-        minweight = -1
-        for edge in edge_dict:
-            corrected_weight = edge.weight*1.0/edge_dict[edge]
-            if minweight == -1 or corrected_weight < minweight:
-                minweight = corrected_weight
-        return minweight
+    def min_weight(self,path, by_nodes = False):
         
+        if not by_nodes: # use edge weights
+            edge_list = self.edges_from_path(path)
+            edge_dict = {}
+            for edge in edge_list:
+                if edge.weight == float("inf"):
+                   pass
+                else:
+                    edge_dict[edge] = edge_dict.get(edge,0) + 1
+
+            minweight = -1
+            for edge in edge_dict:
+                corrected_weight = edge.weight*1.0/edge_dict[edge]
+                if minweight == -1 or corrected_weight < minweight:
+                    minweight = corrected_weight
+            if minweight == -1:
+                print "no edges except to portal, using node weights instead"
+                return self.min_weight(path,by_nodes=True)
+            else:
+                return minweight
+
+        else: # use node weights
+            node_names = self.node_names_from_path(path)
+
+            node_dict = {}
+            for node_name in node_names:
+                if node_name != "Portal":
+                    node_dict[node_name] = node_dict.get(node_name,0) + 1
+
+            minweight = -1
+            for node_name in node_dict:
+                node = self.nodes[node_name]
+                corrected_weight = node.weight*1.0/node_dict[node_name]
+                if minweight == -1 or corrected_weight < minweight:
+                    minweight = corrected_weight
+
+            return minweight
 
     def find_nodename_by_position(self,point1): # point1 = ("chrom",position)
         chrom1 = point1[0]
@@ -626,10 +666,19 @@ class Graph(object):
             intact_lengths.append(self.find_intact_length(path,count_only_nodes_in_set))
         return intact_lengths
 
-    def subtract(self,path,weight):
-        edges = self.edges_from_path(path)
-        for edge in edges:
-            edge.weight = edge.weight - weight
+    def subtract(self,path,weight, by_nodes = False):
+        # print "Subtracting", weight
+        if by_nodes == True:
+            nodes = self.node_names_from_path(path)
+            for node_name in nodes:
+                node = self.nodes[node_name]
+                node.weight = node.weight - weight
+        else:
+            edges = self.edges_from_path(path)
+            for edge in edges:
+                edge.weight = edge.weight - weight
+                # if edge.weight == 0:
+                    # print "zeroed out", edge
 
     def breadth_first_search(self, current_port, destination_port, depth_limit = -1, stop_when_found = False, split_depth_limit=None):
         
@@ -689,7 +738,7 @@ class Graph(object):
         # saving the ports after jumping, so if the path contains A:start, it means you went through A in the reverse direction. A:stop means forward direction. 
 
         ############# Basic steps: ################
-        # jump
+        # jump (read sequence)
         # if current_port == destination_port:
         #     return allpaths + [path_so_far]
         # find edges of port
@@ -816,50 +865,75 @@ class Graph(object):
                 self.depth_first_search_for_group(current_port=current_port,destination_ports=primary_nodes,allpaths=allpaths,stop_when_found=False,depth_limit=degree,cycle_limit=2)
                 path_nodes = set()
                 for path in allpaths:
-                    print path
                     for path_item in path:
                         path_nodes.add(path_item.split(":")[0])
                 connection_path_nodes = connection_path_nodes.union(path_nodes)
 
-        s = self.enclosed_subgraph_from_nodes(nodes_with_exits = primary_nodes, intermediate_nodes=list(connection_path_nodes))
-        print "SPECIAL NODES:", s.nodes
+        s = self.enclosed_subgraph_from_nodes(primary_nodes = primary_nodes, intermediate_nodes=list(connection_path_nodes))
+        # print "SPECIAL NODES:", s.nodes
         return s
 
-    def enclosed_subgraph_from_nodes(self,nodes_with_exits,intermediate_nodes):
-        # nodes_with_exits and intermediate_nodes are lists of strings
+    def enclosed_subgraph_from_nodes(self,primary_nodes,intermediate_nodes):
+        # primary_nodes and intermediate_nodes are lists of strings
         
-        print "enclosed_subgraph_from_nodes()"
+        # print "enclosed_subgraph_from_nodes()"
 
         s = Graph() # s as in subgraph
 
+        region_nodes = primary_nodes + intermediate_nodes
 
-        region_nodes = nodes_with_exits + intermediate_nodes
+        # print "Region nodes:"
+        # print region_nodes
 
         node_attributes = {}
         edges_to_add = {}
+
+        portals = set()
+
         for node_name in region_nodes:
             # Copy the node itself
             node_attributes[node_name] = self.nodes[node_name].attributes
             # Find all the first-degree nodes and their edges
             for port_name in self.nodes[node_name].ports:
                 edges = self.nodes[node_name].ports[port_name].edges
+                if len(edges) == 0:
+                    # print "NO EDGES:", port_name
+                    portals.add(self.nodes[node_name].ports[port_name])
                 for other_port in edges:
+                    edge = edges[other_port]
+
                     # If other side is also in region or this node gets an exit
-                    if str(other_port.node.name) in map(str,region_nodes) or node_name in nodes_with_exits:
-                        print node_name, "connecting to", other_port.node
-                        edge = edges[other_port]
+                    within_region = str(other_port.node.name) in map(str,region_nodes)
+                    # if within_region: 
+                    #     print "within_region", edge
+
+                    split_edge_outside_region = (node_name in primary_nodes and edge.spansplit=="split")
+                    # if split_edge_outside_region:
+                    #     print "split_edge_outside_region", edge
+
+                    if within_region or split_edge_outside_region:
+                        # print node_name, "connecting to", other_port.node
                         # Grab the node on the other side
                         node_attributes[other_port.node.name] = other_port.node.attributes
                         # Create a dictionary of edges to avoid using the same multiple times
                         edges_to_add[str(edge)] = edge
+
+                        if split_edge_outside_region:
+                            # print other_port.jump()
+                            portals.add(other_port.jump())
                     else:
-                        print node_name, "NOT connecting to", other_port.node
-                        print str(other_port.node.name), "NOT IN", map(str,region_nodes)
+                        # print node_name, "NOT connecting to", other_port.node
+                        # print str(other_port.node.name), "NOT IN", map(str,region_nodes)
+                        portals.add(self.nodes[node_name].ports[port_name])
 
         
-        print "all_nodes:", node_attributes.keys()
+        # print "edges_to_add:", edges_to_add
+        # print "all_nodes:", node_attributes.keys()
         # Add nodes to the graph
         s.create_nodes_with_attributes(node_attributes)
+
+        for node_name in node_attributes:
+            s.nodes[node_name].weight = self.nodes[node_name].weight
 
         edge_counter = 0
         # Add edges to the graph
@@ -873,7 +947,17 @@ class Graph(object):
             spansplit = edge.spansplit
             s.create_edge(node1,port1,node2,port2,weight=weight,spansplit=spansplit)
             edge_counter += 1
-        print "total edges:", edge_counter
+        # print "total edges:", edge_counter
+
+
+        # Add portal 
+        s.create_nodes_with_attributes({"Portal":{"chrom":"0","start":0,"stop":0,"x":0,"y":0}})
+        for dead_end_port in portals:
+            weight = float("inf") #portal_edge_weights.get(dead_end_port,float("inf"))
+            s.create_edge(dead_end_port.node.name, dead_end_port.name, "Portal", "stop", weight,spansplit="portal")
+            # self.create_edge(node1,port1,node2,port2,weight):
+
+
 
         return s
 
@@ -883,7 +967,6 @@ class Graph(object):
         if verbose: print "subgraph nodes:", nodes
         
         s = self.subgraph_from_nodes(nodes,degree_given=degree)
-        print "UNSPECIAL NODES:",s.nodes
         return s
 
     def nodes_within_genome_interval(self,chromosome,start,end):
@@ -897,6 +980,17 @@ class Graph(object):
                     matching_nodes.append(node_name)
         
         return matching_nodes
+
+    def node_at_genome_position(self,chromosome,pos):
+        matching_nodes = []
+        for node_name in self.nodes:
+            if chromosome == self.nodes[node_name].attributes["chrom"]:
+                # If at least one end of the node is within the interval (1 and 2) or the node encompasses the interval entirely (3)
+                if self.nodes[node_name].attributes["start"] <= pos and self.nodes[node_name].attributes["stop"] > pos: 
+                    return node_name
+        
+        # if we don't find anything:
+        return None
 
     def first_degree_nodes(self,node_names):
         first_degree_nodes = node_names + []
@@ -959,12 +1053,12 @@ class Graph(object):
 
     def parsimony(self,use_breadth_first_search=False,portal_name="Portal",verbose=False,depth_limit=20,cycle_limit=0,min_weight_required = 10,chop_end_nodes=0,count_only_nodes_in_set=[]):
         # import time
-        self.add_portal()
+        # self.add_portal(fill_to_flow = True ) # ????????????????????????????
         # recording = []
 
         before = time.time()
         allpaths = self.depth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"],cycle_limit=cycle_limit,depth_limit=depth_limit)
-        if verbose==True:
+        if verbose:
             print "DFS:  %.2f seconds" % (time.time()-before)
             print "Number of paths", len(allpaths)
         
@@ -975,6 +1069,11 @@ class Graph(object):
                 if len(path) > chop_end_nodes*2:
                     newpaths.append(path[chop_end_nodes:-chop_end_nodes])
             allpaths = newpaths
+
+        allpaths = self.collapse_redundant_paths(allpaths)
+
+        if verbose:
+            print "Number of unique paths", len(allpaths)
 
         intact_lengths = self.find_path_intact_lengths(allpaths,count_only_nodes_in_set)
         total_lengths = self.find_path_total_lengths(allpaths,count_only_nodes_in_set)
@@ -990,13 +1089,13 @@ class Graph(object):
         for item in ordering:
             index = item[0]
             path = allpaths[index]
-            weight = self.min_weight(path)
+
+            weight = self.min_weight(path,by_nodes=False)
             if weight < min_weight_required:
                 continue
             else:
-                
                 recordings.append([path,intact_lengths[index],weight])
-                self.subtract(path=path,weight=weight)
+                self.subtract(path=path,weight=weight,by_nodes = False)
 
         return recordings
 
@@ -1033,7 +1132,6 @@ class Graph(object):
         print s.nodes
         print s.print_edges()
 
-
         print "Created subgraph of this region with %d nodes and %d edges\n" % (len(s.nodes),len(s.edges))
         # s.to_json(output_prefix+".subgraph.json")
         region_nodes = set(s.nodes_within_genome_interval(chromosome,start,end))
@@ -1067,7 +1165,6 @@ class Graph(object):
         path_counter = 1
 
         total_span_counts_by_node = {}
-
         f = open(output_filename,'w')
         f.write("chromosome,start,end,y_start,height,path_ID\n")
         for record in recordings:
@@ -1082,7 +1179,6 @@ class Graph(object):
                 total_span_counts_by_node[node_name] = total_span_counts_by_node.get(node_name,0) + minweight
             path_counter += 1  
         f.close()
-
 
     def check_overlapping_genes(self,gene1,gene2):
         
@@ -1253,16 +1349,6 @@ class Graph(object):
         f_output_fusion_report_csv.close()
 
 
-    def read_genome_file(self,genome_file):
-        f = open(genome_file)
-        chromosome_lengths = {}
-        for line in f:
-            fields = line.strip().split()
-            chromosome_lengths[fields[0]] = int(fields[1])
-        f.close()
-        return chromosome_lengths
-
-
     def breakpoints_from_sniffles(self,sniffles_filename):
         # Read file once to note all the breakpoints
         breakpoints_by_chromosome = {}
@@ -1278,31 +1364,6 @@ class Graph(object):
 
         f.close()
         return breakpoints_by_chromosome
-
-
-    def nodes_from_breakpoints(self,breakpoints_by_chromosome,genome_file):
-        # INPUT: breakpoints_by_chromosome is a dictionary with keys of chromosomes and entries as lists of positions to cut at
-
-
-        # Use genome file to find ends of chromosomes
-        chromosome_lengths = self.read_genome_file(genome_file)
-
-        nodes={}
-        for chrom in chromosome_lengths:
-            breakpoints = breakpoints_by_chromosome.get(chrom,[])
-            breakpoints.sort()
-            counter = 1
-            node_start = 0
-            for breakpoint in breakpoints:
-                if breakpoint != node_start:
-                    node_name = "%s.%d" % (chrom,counter)
-                    nodes[node_name] = {"chrom":chrom,"start":node_start,"stop":breakpoint}
-                    node_start = breakpoint
-                    counter += 1
-            node_name = "%s.%d" % (chrom,counter)
-            nodes[node_name] = {"chrom":chrom,"start":node_start,"stop":chromosome_lengths[chrom]}
-
-        return nodes
 
 
     def create_edges_from_sniffles(self,sniffles_filename):
@@ -1360,43 +1421,9 @@ class Graph(object):
                 print edge.spansplit
         print "split:",num_split
         print "span:",num_span
-        print "CNVs:",num_CNV
+        if num_CNV > 0:
+            print "CNVs:",num_CNV
 
-    def segmented_coverage_to_CNV_calls(self,coverage_file,cov_diff_threshold_to_split=0):
-        # MUST BE SORTED BY CHROMOSOME THEN BY START POSITION
-
-        # sample:
-        # chromosome      start   end     unsegmented_coverage    coverage
-        # 1       0       10000   1e-05   7.83570386725362
-        # 1       10000   20000   1e-05   7.83570386725362
-
-        f = open(coverage_file)
-
-        breakpoints_by_chromosome = {}
-
-        current_chromosome = ""
-        current_coverage = -1
-
-        for line in f:
-            fields = line.strip().split()
-            chrom = fields[0]
-            if not fields[1].isdigit(): # Header 
-                pass
-            else:
-                start = int(fields[1])
-                end = int(fields[2])
-                # unsegmented_coverage = float(fields[3])
-                segmented_coverage = float(fields[4])
-                if chrom != current_chromosome:
-                    current_coverage = segmented_coverage
-                    current_chromosome = chrom
-                    # You can't have breakpoints on the first bin, so continue to the next bin
-                    continue
-                if abs(segmented_coverage - current_coverage) > cov_diff_threshold_to_split:
-                    current_coverage = segmented_coverage
-                    breakpoints_by_chromosome[chrom] = breakpoints_by_chromosome.get(chrom, []) + [start]
-
-        return breakpoints_by_chromosome
 
     def create_span_edges_at_CNVs(self,breakpoints_from_copy_number):
 
@@ -1417,14 +1444,17 @@ class Graph(object):
                 weight_span = min([self.nodes[node1].weight, self.nodes[rev_node1].weight])
                 self.create_edge(node1,port1,rev_node1,rev_port1,weight_span,spansplit="CNV")
                 
-    def read_copy_number_profile_and_sniffles(self,sniffles_filename,genome_file,coverage_file):
+    def read_copy_number_profile_and_sniffles(self, sniffles_filename, genome_file, coverage_file, min_distance_to_variants_before_cutting_at_CNV = 100000, cov_diff_threshold_to_split=None):
 
-        min_distance_to_variants_before_cutting_at_CNV = 50000
+
+        if cov_diff_threshold_to_split == None:
+            cov_diff_threshold_to_split = self.average_coverage(coverage_file)/2
+
 
         ###############     Create Nodes    #################
         # Find breakpoints
         breakpoints_from_sniffles = self.breakpoints_from_sniffles(sniffles_filename)
-        breakpoints_from_copy_number = self.segmented_coverage_to_CNV_calls(coverage_file)
+        breakpoints_from_copy_number = self.segmented_coverage_to_CNV_calls(coverage_file,cov_diff_threshold_to_split=cov_diff_threshold_to_split)
 
         ####################################################
         ############   Magical merging step   ##############
@@ -1432,8 +1462,6 @@ class Graph(object):
         all_chromosomes = list(set(breakpoints_from_sniffles.keys() + breakpoints_from_copy_number.keys()))
 
         final_breakpoints_from_copy_number = {}
-        
-
 
         NUM_CNV_ADDED = 0
         TOTAL_CNV = 0
@@ -1474,8 +1502,10 @@ class Graph(object):
 
         self.create_span_edges_at_CNVs(final_breakpoints_from_copy_number)
 
+        return final_breakpoints_from_copy_number
 
-    def add_node_weights_from_seg_copy_number(self,coverage_file):
+
+    def add_node_weights_from_seg_copy_number(self,coverage_file,get_average_coverage=False):
         
         # dictionary of coverage (read all into memory), loop through each node to determine which coverage bins are on it, average them all
 
@@ -1521,15 +1551,17 @@ class Graph(object):
 
             node.weight = np.mean(segments_on_node)
             
-        coverage_on_nodes = []
-        total_node_length = 0
-        for node_name in self.nodes:
-            node = self.nodes[node_name]
-            length = (node.attributes["stop"]-node.attributes["start"])
-            total_node_length += length
-            coverage_on_nodes.append(node.weight*length)
+        if get_average_coverage:
+            coverage_on_nodes = []
+            total_node_length = 0
+            for node_name in self.nodes:
+                node = self.nodes[node_name]
+                length = (node.attributes["stop"]-node.attributes["start"])
+                total_node_length += length
+                coverage_on_nodes.append(node.weight*length)
 
-        print "Average coverage on nodes:", sum(coverage_on_nodes)/total_node_length
+            print "Average coverage on nodes:", sum(coverage_on_nodes)/total_node_length
+            return sum(coverage_on_nodes)/total_node_length
 
 
     def select_spanning_port(self,port_object):
@@ -1546,20 +1578,6 @@ class Graph(object):
         return span_ports[0]
 
 
-
-    def approx_equal(self,num1,num2,absolute_difference = 20):
-
-        if abs(num1 - num2) < absolute_difference:
-            return True
-        else:
-            return False
-
-    def significantly_smaller(self,num1,num2,absolute_difference = 10):
-
-        if num1 < (num2 - absolute_difference):
-            return True
-        else:
-            return False
 
     def annotate_sniffles_file_with_variant_flow_evaluations(self,reports, sniffles_filename, output_filename):
 
@@ -1627,6 +1645,7 @@ class Graph(object):
                     breakpoints_by_chromosome[chrom] = breakpoints_by_chromosome.get(chrom, {})
                     breakpoints_by_chromosome[chrom][start] = (current_coverage,segmented_coverage)
                     current_coverage = segmented_coverage
+        f.close()
                     
         return breakpoints_by_chromosome
 
@@ -1920,34 +1939,647 @@ class Graph(object):
         return counts_by_category
 
 
+    def calculate_flow_on_node(self,node_name):
+        node = self.nodes[node_name]
 
-    def balance_flow_on_nodes(self):
-        all_nodes = self.nodes
-        for node_name in all_nodes:
-            node = all_nodes[node_name]
+
+        port1 = node.ports["start"]
+        port2 = node.ports["stop"]
+
+        sum_port1_edgeweights = 0
+        for name in port1.edges:
+            edge = port1.edges[name]
+            sum_port1_edgeweights += edge.weight
+        
+        sum_port2_edgeweights = 0
+        for name in port2.edges:
+            edge = port2.edges[name]
+            sum_port2_edgeweights += edge.weight
+
+        return sum_port1_edgeweights, sum_port2_edgeweights
+
+
+
+    def output_flow_on_nodes(self,output_filename):
+
+        f = open(output_filename,'w')
+        f.write("node_name,chromosome,start,stop,flow_in,flow_out,flow_balance,node_weight,in_matches_weight,out_matches_weight\n")
+
+        for node_name in self.nodes:
+            node_weight = self.nodes[node_name].weight
+            sum_port1_edgeweights, sum_port2_edgeweights = self.calculate_flow_on_node(node_name)
+            attributes = self.nodes[node_name].attributes
+            flow_balance = self.approx_equal(sum_port1_edgeweights, sum_port2_edgeweights)
+            in_matches_weight = self.approx_equal(sum_port1_edgeweights, node_weight)
+            out_matches_weight = self.approx_equal(sum_port2_edgeweights, node_weight)
+            f.write("%s,%s,%d,%d,%.2f,%.2f,%s,%.2f,in matches CN: %s,out matches CN: %s\n" % (node_name, attributes["chrom"],attributes["start"],attributes["stop"],sum_port1_edgeweights, sum_port2_edgeweights,flow_balance, node_weight,in_matches_weight,out_matches_weight))
+
+        f.close()
+
+
+    # def find_suitable_regions(self,CNV_breakpoints,genome_file,verbose=False):
+
+    #     regions = self.nodes_from_breakpoints(CNV_breakpoints,genome_file)
+
+    #     suitable_regions = []
+    #     for region_name in regions:
+    #         attributes = regions[region_name]
+    #         chrom = attributes["chrom"]
+    #         start = attributes["start"]
+    #         stop = attributes["stop"]
+    #         size = stop - start
+
+    #         split_edges = self.split_edges_within_genome_interval(chrom,start,stop)
+    #         num_splits = len(split_edges)
+
+
+    #         if size > 1000000 and num_splits > 3 and num_splits < 1000:
+    #             if verbose: print chrom,"\t", "Splits:", num_splits, "Size:", size
+    #             profile = {}
+    #             for key in attributes:
+    #                 profile[key] = attributes[key]
+    #             profile["num_splits"] = num_splits
+
+    #             suitable_regions.append(profile)
+
+    #     print "Found", len(suitable_regions), "suitable regions for Evolution"
+
+    #     return suitable_regions
+
+
+    def approx_equal(self,num1,num2):
+
+        if abs(num1 - num2) < (num1+num2)/2:
+            return True
+        else:
+            return False
+
+    def significantly_smaller(self,num1,num2):
+
+        if num1 < (num2 - absolute_difference):
+            return True
+        else:
+            return False
+
+    # def evaluate_regions(self,suitable_regions,output_filename):
+    #     print 'UNFINISHED FUNCTION: evaluate_regions'
+        
+    #     for region in suitable_regions:
+    #         node_names = self.nodes_within_genome_interval(region["chrom"],region["start"],region["stop"])
+    #         node_balance = []
+    #         for node_name in node_names:
+                # node_weight = self.nodes[node_name].weight
+                # sum_port1_edgeweights, sum_port2_edgeweights = self.calculate_flow_on_node(node_name)
+                # attributes = self.nodes[node_name].attributes
+                # flow_balance = self.approx_equal(sum_port1_edgeweights, sum_port2_edgeweights)
+                # in_matches_weight = self.approx_equal(sum_port1_edgeweights, node_weight)
+                # out_matches_weight = self.approx_equal(sum_port2_edgeweights, node_weight)
+
+                # in_vs_out = self.approx_equal(sum_port1_edgeweights,sum_port2_edgeweights):
+                # in_vs_node = self.approx_equal(sum_port1_edgeweights,node_weight)
+                # out_vs_node = self.approx_equal(sum_port2_edgeweights,node_weight)
+
+                # # If all 3 == True:
+                #     # No rebalancing needed, but we can do a refinement to make the values closer
+                # # If 1 == True:
+                #     # Set the one that doesn't agree to an average of the other two
+                # # If none agree:
+                #     # Red flag the region and ignore it or cut the region into pieces at this point and start over
+
+
+
+    # def calculate_flow_on_node(self,node_name):
+    #     node = self.nodes[node_name]
+
+
+    #     port1 = node.ports["start"]
+    #     port2 = node.ports["stop"]
+
+    #     sum_port1_edgeweights = 0
+    #     for name in port1.edges:
+    #         edge = port1.edges[name]
+    #         sum_port1_edgeweights += edge.weight
+        
+    #     sum_port2_edgeweights = 0
+    #     for name in port2.edges:
+    #         edge = port2.edges[name]
+    #         sum_port2_edgeweights += edge.weight
+
+    #     return sum_port1_edgeweights, sum_port2_edgeweights
+
+
+    def balance_port(self,port,increase):
+
+        # if increase > 0: ################################################
+        found = False
+        for name in port.edges:
+            edge = port.edges[name]
+            if edge.spansplit == "split":
+                edge.weight = max([edge.weight + increase,0])
+                found = True
+                break
+        if found == False:
+            for name in port.edges:
+                edge = port.edges[name]
+                # if edge.spansplit == "span":
+                edge.weight = max([edge.weight + increase,0])
+                found = True
+                break
+
+    def all_equal(self,values,allowance=0.001):
+        for item in values:
+            if abs(item - values[0])>allowance:
+                return False
+        return True
+
+    def balance_flow_on_nodes(self,strategy = "average"):
+
+        if not strategy in ["CN", "average"]:
+            print "strategy must be 'CN' or 'average'"
+            return []
+
+        categories = {}
+        missing_flow_values = {}
+
+        unbalanceable_nodes = []
+
+        for node_name in self.nodes:
+            node = self.nodes[node_name]
+            node_weight = self.nodes[node_name].weight
+
+            sum_port1_edgeweights, sum_port2_edgeweights = self.calculate_flow_on_node(node_name)
+            attributes = node.attributes
+            flow_balance = self.approx_equal(sum_port1_edgeweights, sum_port2_edgeweights)
+            in_matches_weight = self.approx_equal(sum_port1_edgeweights, node_weight)
+            out_matches_weight = self.approx_equal(sum_port2_edgeweights, node_weight)
+
+            in_vs_out = self.approx_equal(sum_port1_edgeweights,sum_port2_edgeweights)
+            in_vs_node = self.approx_equal(sum_port1_edgeweights,node_weight)
+            out_vs_node = self.approx_equal(sum_port2_edgeweights,node_weight)
+
+            categories[node_name] = (in_vs_out,in_vs_node,out_vs_node)
+
+            # Get ready to edit some of these values
             port1 = node.ports["start"]
             port2 = node.ports["stop"]
-            sum_port1_edgeweights = 0
-            for name in port1.edges:
-                edge = port1.edges[name]
-                sum_port1_edgeweights += edge.weight
-            sum_port2_edgeweights = 0
-            for name in port2.edges:
-                edge = port2.edges[name]
-                sum_port2_edgeweights += edge.weight
-            # print sum_port1_edgeweights,"\t", sum_port2_edgeweights, "\t", abs(sum_port1_edgeweights-sum_port2_edgeweights)
-            if sum_port1_edgeweights > sum_port2_edgeweights:
-                for name in port2.edges:
-                    edge = port2.edges[name]
-                    if edge.spansplit == "split":
-                        edge.weight += sum_port1_edgeweights-sum_port2_edgeweights
-                        break
-            if sum_port2_edgeweights > sum_port1_edgeweights:
-                for name in port1.edges:
-                    edge = port1.edges[name]
-                    if edge.spansplit == "split":
-                        edge.weight += sum_port2_edgeweights-sum_port1_edgeweights
-                        break
+
+            # If all 3 == True:
+                # No rebalancing needed, but we can do a refinement to make the values closer
+            # If 1 == True:
+                # Set the one that doesn't agree to an average of the other two
+            # If none agree:
+                # Red flag the region and ignore it or cut the region into pieces at this point and start over
+
+            if sum([in_vs_out,in_vs_node,out_vs_node]) > 0:
+                new_flow_level = node_weight
+                if node_weight == sum_port1_edgeweights and node_weight == sum_port2_edgeweights:
+                    categories[node_name] = "All exactly equal"
+                    new_flow_level = node_weight
+                elif (in_vs_out,in_vs_node,out_vs_node) == (True,True,True):
+                    categories[node_name] = "All agree, refined"
+                    new_flow_level = node_weight
+                elif (in_vs_out,in_vs_node,out_vs_node) == (True,False,False):
+                    categories[node_name] = "In and out agree"
+                    new_flow_level = (sum_port1_edgeweights + sum_port2_edgeweights)/2
+                elif (in_vs_out,in_vs_node,out_vs_node) == (False,True,False):
+                    categories[node_name] = "Node and in agree"
+                    if strategy == "average":
+                        new_flow_level = (sum_port1_edgeweights + node_weight)/2
+                    elif strategy == "CN":
+                        new_flow_level = node_weight
+                    else:
+                        print "UNKNOWN STRATEGY"
+                elif (in_vs_out,in_vs_node,out_vs_node) == (False,False,True):
+                    categories[node_name] = "Node and out agree"
+                    if strategy == "average":
+                        new_flow_level = (sum_port2_edgeweights + node_weight)/2
+                    elif strategy == "CN":
+                        new_flow_level = node_weight
+                    else:
+                        print "UNKNOWN STRATEGY"
+                elif (in_vs_out,in_vs_node,out_vs_node) == (True,True,False):
+                    categories[node_name] = "In agrees with both"
+                    new_flow_level = sum_port1_edgeweights
+                elif (in_vs_out,in_vs_node,out_vs_node) == (True,False,True):
+                    categories[node_name] = "Out agrees with both"
+                    new_flow_level = sum_port2_edgeweights
+                elif (in_vs_out,in_vs_node,out_vs_node) == (False,True,True):
+                    categories[node_name] = "Node agrees with both"
+                    new_flow_level = node_weight
+                else:
+                    print (in_vs_out,in_vs_node,out_vs_node), "MISSING"
+                
+                # Rebalance to the new_flow_level
+                if new_flow_level < 0:
+                    new_flow_level = 0
+                self.balance_port(port1,new_flow_level - sum_port1_edgeweights)
+                self.balance_port(port2,new_flow_level - sum_port2_edgeweights)
+                self.nodes[node_name].weight = new_flow_level
+            else:
+                categories[node_name] = "All disagree, red flag this node"
+                unbalanceable_nodes.append(node_name)
+
+            # After all attempts at balancing, quantify exactly how much each node has a discrepancy in flow left over
+            sum_port1_edgeweights, sum_port2_edgeweights = self.calculate_flow_on_node(node_name)
+            biggest_diff = max([abs(node_weight - sum_port1_edgeweights), abs(node_weight - sum_port2_edgeweights), abs(sum_port1_edgeweights - sum_port2_edgeweights)])
+            missing_flow_values[node_name] = biggest_diff
+
+        print "sum missing flow:", sum(missing_flow_values.values())
+
+        self.count_by_category(categories)
+
+        return unbalanceable_nodes
+        
+
+
+    def count_balanced_nodes(self,verbose=False):
+
+        num_balanced_nodes = 0
+        num_total_nodes = 0
+
+        for node_name in self.nodes:
+            node = self.nodes[node_name]
+            node_weight = self.nodes[node_name].weight
+
+            sum_port1_edgeweights, sum_port2_edgeweights = self.calculate_flow_on_node(node_name)
+            attributes = node.attributes
+            flow_balance = self.approx_equal(sum_port1_edgeweights, sum_port2_edgeweights)
+            in_matches_weight = self.approx_equal(sum_port1_edgeweights, node_weight)
+            out_matches_weight = self.approx_equal(sum_port2_edgeweights, node_weight)
+
+            in_vs_out = self.approx_equal(sum_port1_edgeweights,sum_port2_edgeweights)
+            in_vs_node = self.approx_equal(sum_port1_edgeweights,node_weight)
+            out_vs_node = self.approx_equal(sum_port2_edgeweights,node_weight)
+
+            if sum([in_vs_out,in_vs_node,out_vs_node]) > 1:
+                num_balanced_nodes += 1
+            num_total_nodes += 1
+
+        if verbose:
+            print "Number of balanced nodes:", num_balanced_nodes
+            print "Total number of nodes:", num_total_nodes
+
+        return num_balanced_nodes, num_total_nodes
+
+
+
+    def output_variants_from_graph(self,output_filename,flow_reports=None):
+        fout = open(output_filename, 'w')
+        fout.write("chrom1,pos1,chrom2,pos2,variant_name,strand1,strand2,split,span1,span2,flow_category,description\n")
+        
+        for edge in self.edges:
+            if edge.spansplit == "split":
+                split = edge.weight
+                variant_name = edge.variant_name
+
+                port1 = edge.ports[0]
+                port2 = edge.ports[1]
+
+                side_port1 = self.select_spanning_port(port1)
+                side_port2 = self.select_spanning_port(port2)
+
+                span1 = port1.edges[side_port1].weight
+                span2 = port2.edges[side_port2].weight
+
+                chrom1 = port1.node.attributes["chrom"]
+                chrom2 = port2.node.attributes["chrom"]
+
+                port_name_1 = str(port1).split(":")
+                port_name_2 = str(port2).split(":")
+                
+                pos1 = self.nodes[port_name_1[0]].attributes[port_name_1[1]]
+                pos2 = self.nodes[port_name_2[0]].attributes[port_name_2[1]]
+
+                strand1 = "+"
+                if port_name_1[1] == "start":
+                    strand1 = "-"
+                strand2 = "+"
+                if port_name_2[1] == "start":
+                    strand2 = "-"
+
+                flow_info = "No flow info"
+                if flow_reports != None:
+                    flow_info = flow_reports.get(variant_name, "No flow info")
+                
+                fout.write("%s,%d,%s,%d,%s,%s,%s,%.2f,%.2f,%.2f,%s\n" % (chrom1,pos1,chrom2,pos2,variant_name,strand1,strand2,split,span1,span2,flow_info))
+
+        fout.close()
+
+
+
+    def output_nodes_as_boxes(self,output_filename):
+        
+        f = open(output_filename,'w')
+        f.write("chromosome,start,end,y_start,height,path_ID\n")
+
+        path_counter = 1
+        for node_name in self.nodes:
+            node = self.nodes[node_name]
+            f.write("%s,%d,%d,%d,%d,path_%d\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],0,node.weight,path_counter))
+            path_counter += 1
+        f.close()
+
+
+    def local_parsimony(self,chrom,start,end):
+        primary_nodes = self.nodes_within_genome_interval(chrom,start,end)
+        s1 = self.special_subgraph_from_genome_interval(chrom,start,end,degree=5)
+        # print s1
+
+        # s1.tree_parsimony()
+
+
+    def node_flow_diff(self,node):
+        sum_port1_edgeweights, sum_port2_edgeweights = self.calculate_flow_on_node(node.name)
+
+        diff_flow = abs(sum_port1_edgeweights-sum_port2_edgeweights) + abs((sum_port1_edgeweights+sum_port2_edgeweights)/2 - node.weight)
+        return diff_flow
+
+    def score_variants_by_contribution_to_flow_on_nodes(self):
+
+        variant_scores = {}
+
+        for node_name in self.nodes:
+            node = self.nodes[node_name]
+            node_weight = self.nodes[node_name].weight
+
+            sum_port1_edgeweights, sum_port2_edgeweights = self.calculate_flow_on_node(node_name)
+            attributes = node.attributes
+            flow_balance = self.approx_equal(sum_port1_edgeweights, sum_port2_edgeweights)
+            in_matches_weight = self.approx_equal(sum_port1_edgeweights, node_weight)
+            out_matches_weight = self.approx_equal(sum_port2_edgeweights, node_weight)
+
+            in_vs_out = self.approx_equal(sum_port1_edgeweights,sum_port2_edgeweights)
+            in_vs_node = self.approx_equal(sum_port1_edgeweights,node_weight)
+            out_vs_node = self.approx_equal(sum_port2_edgeweights,node_weight)
+
+            port1 = node.ports["start"]
+            port2 = node.ports["stop"]
+
+            original_node_flow_diff = self.node_flow_diff(node)
+
+
+            if sum([in_vs_out,in_vs_node,out_vs_node]) > 1:
+                for port in [port1,port2]:
+                    for name in port.edges:
+                        edge = port.edges[name]
+                        if edge.spansplit == "split":
+                            saved_edge_weight = edge.weight
+                            edge.weight = 0
+                            experimental_node_flow_diff = self.node_flow_diff(node)
+                            edge.weight = saved_edge_weight
+                            if original_node_flow_diff > experimental_node_flow_diff:
+                                variant_scores[edge.variant_name] = max([variant_scores.get(edge.variant_name,0),100])
+                            else:
+                                variant_scores[edge.variant_name] = max([variant_scores.get(edge.variant_name,0),0])
+
+        self.count_by_category(variant_scores)
+
+
+    # def tree_parsimony(self):
+    #     portal_name = "Portal"
+    #     cycle_limit = 2
+    #     depth_limit = 30
+
+
+    #     self.add_portal(all_ports = False)
+
+    #     print self.edges
+
+        # before = time.time()
+        # allpaths = self.depth_first_search(self.nodes[portal_name].ports["start"],self.nodes[portal_name].ports["start"],cycle_limit=cycle_limit,depth_limit=depth_limit)
+        
+        # print len(allpaths)
+        
+        # unique_paths = self.collapse_redundant_paths(allpaths)
+
+        # print len(unique_paths)
+        # for path in unique_paths:
+        #     print path
+
+
+
+    def show_flow_around_gene(self,gene,output_filename):
+        annotation = self.annotation.get(gene)
+
+        print annotation
+
+        # Traverse the graph in both directions and go down all possible paths up to a certain distance 
+        step = 200000
+        checkpoint_locations = range(step,step*10,step)
+
+        start_chrom = annotation["chrom"]
+        start_pos = (annotation["start"]+annotation["stop"])/2
+
+        node_name = self.find_nodename_by_position((start_chrom,start_pos))
+        node = self.nodes[node_name]
+        attr = node.attributes
+        node_sequence_length = attr["stop"] - attr["start"]
+
+
+        forward_and_reverse_flows = []
+        forward_and_reverse_flows.append((self.nodes[node_name].attributes["chrom"],0))
+
+        for start_direction in ["+","-"]:
+            
+            # Find all the positions of the threads after "distance" distance
+            start_port = None
+            current_distance = 0
+
+            if start_direction == "+":
+                start_port = self.nodes[node_name].ports["start"]
+                current_distance = attr["start"]- start_pos # negative to offset the fact that we are gonna travel across the whole node
+            elif start_direction == "-":
+                start_port = self.nodes[node_name].ports["stop"]
+                current_distance = start_pos - attr["stop"] # negative to offset the fact that we are gonna travel across the whole node
+            else:
+                print "ERROR: start_direction must be + or -"
+                return
+
+            print "start_port", start_port
+
+            all_places = []
+            self.depth_first_traverse(current_port=start_port, current_distance=current_distance, checkpoint_index=0,all_places=all_places,checkpoint_locations=checkpoint_locations)
+            if start_direction == "+":
+                forward_and_reverse_flows.extend(all_places)
+            else:
+                for place in all_places:
+                    place = (place[0],-1*place[1])
+                    forward_and_reverse_flows.append(place)
+
+
+        f = open(output_filename,'w')
+        f.write("chromosome,distance\n")
+        for place in forward_and_reverse_flows:
+            chrom = place[0]
+            distance = place[1]
+
+            f.write("%s,%d\n" % (chrom,distance))
+
+        f.close()
+
+
+
+    def depth_first_traverse(self,current_port,current_distance,checkpoint_index,all_places,checkpoint_locations,depth=0,max_recursion_depth = 20):
+        target_distance = checkpoint_locations[checkpoint_index]
+
+        attr = current_port.node.attributes
+        node_sequence_length = attr["stop"] - attr["start"]
+
+        current_distance += node_sequence_length
+
+        jumped_port = current_port.jump()
+        
+        saveport = str(jumped_port)
+
+        while current_distance >= target_distance:
+            # all_places.append((current_port,target_distance))
+            all_places.append((current_port.node.attributes["chrom"],target_distance))
+            checkpoint_index += 1
+        
+            if checkpoint_index >= len(checkpoint_locations):
+                return
+            target_distance = checkpoint_locations[checkpoint_index]                
+        
+        if depth >= max_recursion_depth:
+            # print "hit max recursion"
+            all_places.append(("maxed out",target_distance))
+            return
+        # keep recursing
+        edges = jumped_port.edges.values()
+        for edge in edges:
+            glide_port = edge.glide(jumped_port)
+            self.depth_first_traverse(current_port=glide_port, current_distance=current_distance, checkpoint_index=checkpoint_index,all_places=all_places,checkpoint_locations=checkpoint_locations,depth=depth+1,max_recursion_depth=max_recursion_depth)
+
+
+########################  Segment strategy for local evolution  ##########################
+
+    def bottom_up_evolution(self,chromosome,start,end,output_prefix,min_weight_required):
+        
+        # 1. Find segments
+        segments = self.find_segments_from_genome_interval(chromosome,start,end,min_weight_required=min_weight_required)
+        print segments
+        print "Found a set of", len(segments), "segments."
+        
+        self.boxes_from_parsimony(segments,output_filename=output_prefix+".boxes.csv")
+
+        # 2. Link segments but remember to impose Parsimony!!
+            # Also make sure inverted duplications work out correctly (currently may be counting only half and the looping edge was cut out of the subgraph when we found segments)
+
+        # 3. That's it! Display the results
+
+
+    def spanning_only_subgraph_from_genome_interval(self,chromosome,start,end,verbose=True):
+        primary_nodes = self.nodes_within_genome_interval(chromosome,start,end)
+
+        s = Graph()
+
+        node_attributes = {}
+        edges_to_add = {} # Create a dictionary of edges to avoid adding the same edge multiple times
+        portals = {}
+
+        for node_name in primary_nodes:
+            # Copy the node itself
+            node_attributes[node_name] = self.nodes[node_name].attributes
+            # Find all the first-degree nodes and their edges
+            for port_name in self.nodes[node_name].ports:
+                this_port = self.nodes[node_name].ports[port_name]
+                edges = this_port.edges
+                if len(edges) == 0:
+                    # print "NO EDGES:", port_name
+                    portals[self.nodes[node_name].ports[port_name]] = self.nodes[node_name].weight
+                for other_port in edges:
+                    edge = edges[other_port]
+
+                    # If this is a spanning edge within the region:
+                    within_region = str(other_port.node.name) in map(str,primary_nodes)
+                    
+                    if (within_region and edge.spansplit in ["CNV","span"]) or this_port==other_port:
+                        edges_to_add[str(edge)] = edge
+                    else:
+                        # Add a portal with the weight of the edge we are not including (sum these for the special case on the edge of the region where flow from both span and split edges need to escape to the portal )
+                        portals[self.nodes[node_name].ports[port_name]] = portals.get(self.nodes[node_name].ports[port_name],0) + edge.weight
+
+        # Add nodes to the graph
+        s.create_nodes_with_attributes(node_attributes)
+
+        for node_name in node_attributes:
+            s.nodes[node_name].weight = self.nodes[node_name].weight
+
+        edge_counter = 0
+
+        # Add edges to the graph
+        for edge_name in edges_to_add:
+            edge = edges_to_add[edge_name]
+            node1 = edge.ports[0].node.name
+            port1 = edge.ports[0].name
+            node2 = edge.ports[1].node.name
+            port2 = edge.ports[1].name
+            weight = edge.weight
+            spansplit = edge.spansplit
+            s.create_edge(node1,port1,node2,port2,weight=weight,spansplit=spansplit)
+            edge_counter += 1
+
+
+        # Add portal 
+        s.create_nodes_with_attributes({"Portal":{"chrom":"0","start":0,"stop":0,"x":0,"y":0}})
+        for dead_end_port in portals:
+            s.create_edge(dead_end_port.node.name, dead_end_port.name, "Portal", "stop", portals[dead_end_port],spansplit="portal")
+
+        return s
+
+
+    def find_segments_from_genome_interval(self,chromosome,start,end,verbose = True,min_weight_required=0):
+
+        # Build subgraph of primary nodes only (spanning edges only) and hook all split edges up to the Portal:
+        s = self.spanning_only_subgraph_from_genome_interval(chromosome,start,end)   
+
+        if verbose:
+            print s
+            s.print_edges()
+        
+        # Find all spanning paths
+        # Do the usual iterative subtraction until all paths are gone
+        
+        reports = s.parsimony(depth_limit = 50,verbose=True,chop_end_nodes=0,min_weight_required=min_weight_required)
+        if verbose:
+            for report in reports:
+                print report
+
+        # Report these segments
+        return reports
+
+
+    def cover_uncovered_nodes(self):
+        counter = 0
+        for node_name in self.nodes:
+            node = self.nodes[node_name]
+            port1 = node.ports["start"]
+            port2 = node.ports["stop"]
+
+            weight_side_1 = 0
+            weight_side_2 = 0
+
+            CNV_on_side_1 = False
+            for other_port in port1.edges:
+                if port1.edges[other_port].spansplit == "CNV":
+                    CNV_on_side_1 = True
+                    weight_side_1 = other_port.node.weight
+                    break
+
+            CNV_on_side_2 = False
+            for other_port in port2.edges:
+                if port2.edges[other_port].spansplit == "CNV":
+                    CNV_on_side_2 = True
+                    weight_side_2 = other_port.node.weight
+                    break
+
+            if CNV_on_side_1 and CNV_on_side_2:
+                # print node_name, "has CNV on both sides"
+                # print weight_side_1, node.weight, weight_side_2
+                if node.weight < min([weight_side_1,weight_side_2]):
+                    node.weight = min([weight_side_1,weight_side_2])
+                counter += 1
+        print counter, "total nodes with CNVs on both sides"
 
 
 
@@ -1960,7 +2592,375 @@ class Graph(object):
 
 
 
+    ########################################################################################################
+    ################### All major functions needed for April 6th version below this line ###################
+    ########################################################################################################
+    # coverage, variants, and genome files are now all .csv files
+    # span counts are now set by coverage only
+
+    def bin_size(self,coverage_file):
+        f = open(coverage_file)
+
+        bin_sizes = []
+
+        for line in f:
+            fields = line.strip().split(",")
+            chrom = fields[0]
+            if not fields[1].isdigit(): # Header 
+                # print line.strip()
+                pass
+            else:
+                start = int(fields[1])
+                end = int(fields[2])
+                bin_sizes.append(end-start)
+
+        f.close()
+
+        return np.median(bin_sizes)
 
 
+    def segmented_coverage_to_CNV_calls(self,coverage_file,cov_diff_threshold_to_split=0,csv=False):
+        # MUST BE SORTED BY CHROMOSOME THEN BY START POSITION
+
+        # sample:
+        # chromosome      start   end     unsegmented_coverage    coverage
+        # 1       0       10000   1e-05   7.83570386725362
+        # 1       10000   20000   1e-05   7.83570386725362
+
+        f = open(coverage_file)
+
+        breakpoints_by_chromosome = {}
+
+        current_chromosome = ""
+        current_coverage = -1
+
+        for line in f:
+            fields = line.strip().split()
+            if csv:
+                fields = line.strip().split(",")
+            chrom = fields[0]
+            if not fields[1].isdigit(): # Header 
+                continue
+            start = int(fields[1])
+            end = int(fields[2])
+            # unsegmented_coverage = float(fields[3])
+            segmented_coverage = float(fields[4])
+            if chrom != current_chromosome:
+                current_coverage = segmented_coverage
+                current_chromosome = chrom
+                # You can't have breakpoints on the first bin, so continue to the next bin
+                continue
+            if abs(segmented_coverage - current_coverage) > cov_diff_threshold_to_split:
+                current_coverage = segmented_coverage
+                breakpoints_by_chromosome[chrom] = breakpoints_by_chromosome.get(chrom, []) + [start]
+
+        return breakpoints_by_chromosome
+
+    def breakpoints_from_variants(self,variants_filename,csv=False):
+        # Read file once to note all the breakpoints
+        breakpoints_by_chromosome = {}
+        f = open(variants_filename)
+        for line in f:
+            fields = line.strip().split()
+            if csv:
+                fields = line.strip().split(",")
+            if not fields[1].isdigit(): # Header 
+                continue
+            chrom1 = fields[0]
+            pos1 = (int(fields[1]) + int(fields[2]))/2
+            breakpoints_by_chromosome[chrom1] = breakpoints_by_chromosome.get(chrom1,[]) + [pos1]
+            chrom2 = fields[3]
+            pos2 = (int(fields[4]) + int(fields[5]))/2
+            breakpoints_by_chromosome[chrom2] = breakpoints_by_chromosome.get(chrom2,[]) + [pos2]
+
+        f.close()
+        return breakpoints_by_chromosome
+
+    def binary_search_for_closest(self,x,a,start,end):
+        # search for the closest position to x
+        # O(log(m)) where m = number of CNVs
+
+        if end-start <= 1:
+            if abs(x-a[start]) <= abs(x-a[end]):
+                return a[start]
+            else:
+                return a[end]
+        else:
+            mid = (start+end)/2
+            if x > a[mid]:
+                return self.binary_search_for_closest(x,a,start=mid,end=end)
+            else:
+                return self.binary_search_for_closest(x,a,start=start,end=mid)
+
+    def snap_variants_to_CNVs(self, variant_breakpoints, copy_number_breakpoints):
+        if len(copy_number_breakpoints)==0:
+            variants_with_nearest_breakpoint = []
+            for variant in variant_breakpoints:
+                variants_with_nearest_breakpoint.append((variant,None))
+            return variants_with_nearest_breakpoint
+        # O(n*log(m)) where n = number of variants, m = number of CNVs
+        # O(n*log(m)) = O(n) for looping through variants, O(log(m)) for binary search through CNVs
+
+        # Sort these in case the original input coverage file was not sorted
+        CNVs = np.array(copy_number_breakpoints)
+        CNVs.sort()
+
+        variants_with_nearest_breakpoint = []
+        for variant in variant_breakpoints:
+            variants_with_nearest_breakpoint.append((variant, self.binary_search_for_closest(variant,CNVs,0,len(CNVs)-1)))
+
+        #  return tuple with (variant,nearest_CNV), just positions, no chromosomes
+        return variants_with_nearest_breakpoint 
+
+
+    def read_genome_file(self,genome_file,csv=False):
+        f = open(genome_file)
+        chromosome_lengths = {}
+        for line in f:
+            fields = line.strip().split()
+            if csv:
+                fields = line.strip().split(",")
+            if not fields[1].isdigit(): # Header 
+                continue
+            chromosome_lengths[fields[0]] = int(fields[1])
+        f.close()
+        return chromosome_lengths
+
+    def nodes_from_breakpoints(self,breakpoints_by_chromosome,genome_file,csv=False):
+        # INPUT: breakpoints_by_chromosome is a dictionary with keys of chromosomes and entries as lists of positions to cut at
+
+        # Use genome file to find ends of chromosomes
+        chromosome_lengths = self.read_genome_file(genome_file,csv)
+
+        nodes={}
+        for chrom in chromosome_lengths:
+            breakpoints = breakpoints_by_chromosome.get(chrom,[])
+            breakpoints.sort()
+            counter = 1
+            node_start = 0
+            for breakpoint in breakpoints:
+                if breakpoint != node_start:
+                    node_name = "%s.%d" % (chrom,counter)
+                    nodes[node_name] = {"chrom":chrom,"start":node_start,"stop":breakpoint}
+                    node_start = breakpoint
+                    counter += 1
+            node_name = "%s.%d" % (chrom,counter)
+            nodes[node_name] = {"chrom":chrom,"start":node_start,"stop":chromosome_lengths[chrom]}
+
+        return nodes
+
+
+    def snap_breakpoints(self, breakpoints_from_copy_number, all_breakpoints_from_variants, resolution,verbose=False):
+
+        variant_cluster_consensus_breakpoints = {}
+        for chrom in all_breakpoints_from_variants:
+            # Find which variants can snap onto CNVs and which ones cannot
+            unsnapped_variants = []
+            snapped_variants = []
+            if verbose: print "chromosome:", chrom 
+            variants_with_nearest_breakpoint = self.snap_variants_to_CNVs(variant_breakpoints=all_breakpoints_from_variants[chrom],copy_number_breakpoints=breakpoints_from_copy_number.get(chrom,[]))
+            for var,CNV in variants_with_nearest_breakpoint:
+                if CNV == None:
+                    unsnapped_variants.append(var)
+                elif abs(var-CNV) < resolution:
+                    snapped_variants.append((var,CNV))
+                else:
+                    unsnapped_variants.append(var)
+            if verbose: 
+                print "snapped", len(snapped_variants)
+                print "unsnapped", len(unsnapped_variants)
+                print "___________________________"
+
+            # For variants that cannot snap onto CNVs:
+            # Cluster variants within our resolution and choose the average position as the breakpoint
+            sorted_positions = np.array(unsnapped_variants)
+            sorted_positions.sort()
+            clusters = []
+            current_cluster = []
+
+            for i in xrange(len(sorted_positions)):
+                if current_cluster == [] or abs(current_cluster[-1]-sorted_positions[i]) < resolution:
+                    current_cluster.append(sorted_positions[i])
+                else:
+                    clusters.append(current_cluster)
+                    current_cluster = [sorted_positions[i]]
+            clusters.append(current_cluster)
+
+            for cluster in clusters:
+                variant_cluster_consensus_breakpoints[chrom] = variant_cluster_consensus_breakpoints.get(chrom,[]) + [int(np.mean(cluster))]
+
+        # Cut the graph at all CNV and clustered variant breakpoints
+        consolidated_breakpoints_by_chromosome = {}
+        for chrom in set(variant_cluster_consensus_breakpoints.keys()).union(set(breakpoints_from_copy_number.keys())):
+            consolidated_breakpoints_by_chromosome[chrom] = variant_cluster_consensus_breakpoints.get(chrom,[]) + breakpoints_from_copy_number.get(chrom,[])
+
+        return consolidated_breakpoints_by_chromosome
+
+
+    def breakpoints_from_graph(self):
+        # output: dictionary of breakpoints[chrom]
+        breakpoints = {}
+        for node_name in self.nodes:
+            attributes = self.nodes[node_name].attributes
+            chrom = attributes["chrom"]
+            breakpoints[chrom] = breakpoints.get(chrom,[]) + [attributes["start"]] + [attributes["stop"]]
+
+        return breakpoints
+
+    def create_split_edge(self, key1, key2, weight_split,split_variant_name,verbose=False):
+        port1 = ""
+        if key1[2] == "+":
+            port1 = "stop"
+        elif key1[2] == "-":
+            port1 = "start"
+        else:
+            raise FileFormatError("strands must be + or - in columns 9 and 10")
+
+        port2 = ""
+        if key2[2] == "+":
+            port2 = "stop"
+        elif key2[2] == "-":
+            port2 = "start"
+        else:
+            raise FileFormatError("strands must be + or - in columns 9 and 10")
+
+        # split
+        node1 = self.node_lookup.get(key1, "NA")
+        node2 = self.node_lookup.get(key2, "NA")
+        if node1 == "NA" or node2 == "NA":
+            print "Keys attempted"
+            print "key1:", key1, "found:", node1
+            print "key2:", key2, "found:", node2
+            print "___________________________________"
+            
+            if node1 == "NA":
+                print "Dictionary for chrom of key1:"
+                for key in self.node_lookup:
+                    if key[0] == key1[0]:
+                        print key
+            if node2 == "NA":
+                print "Dictionary for chrom of key2:"
+                for key in self.node_lookup:
+                    if key[0] == key2[0]:
+                        print key
+            raise FileFormatError("Attempted to create edge at breakpoint not represented among the nodes in the graph")
+        self.create_edge(node1,port1,node2,port2,weight_split,spansplit="split",split_variant_name=split_variant_name)
+        if verbose==True:
+            print "nodes:", node1, node2
+
+    def connect_nodes_at_variants(self,variants_filename,resolution,verbose=False):
+
+        # get all breakpoints from graph
+        graph_breakpoints = self.breakpoints_from_graph() # output: dictionary[chrom]
+        for chrom in graph_breakpoints:
+            graph_breakpoints[chrom] = np.array(graph_breakpoints[chrom])
+            graph_breakpoints[chrom].sort()
+            graph_breakpoints[chrom] = graph_breakpoints[chrom][1:-1] # avoid ends of chromosomes
+
+        # read variants file
+        # for variant in file:
+        #       snap onto breakpoints
+        #       create split edge
+
+        f = open(variants_filename)
+        # count_far_away = 0
+        variant_names_used_already = set()
+
+        variant_counter = 0
+        for line in f:
+            fields = line.strip().split(",")
+            if not fields[1].isdigit(): # Header 
+                continue
+            chrom1 = fields[0]
+            pos1 = (int(fields[1]) + int(fields[2]))/2
+            closest1 = self.binary_search_for_closest(pos1,graph_breakpoints[chrom1],0,len(graph_breakpoints[chrom1])-1)
+            strand1 = fields[8]
+            # if abs(closest1 - pos1) > resolution:
+            #     # if verbose: print "no breakpoint within resolution:        pos1:",pos1,"   closest1:",closest1
+            #     count_far_away +=1 
+
+            chrom2 = fields[3]
+            pos2 = (int(fields[4]) + int(fields[5]))/2
+            closest2 = self.binary_search_for_closest(pos2,graph_breakpoints[chrom2],0,len(graph_breakpoints[chrom2])-1)
+            strand2 = fields[9]
+            # if abs(closest2 - pos2) > resolution:
+            #     # if verbose: print "no breakpoint within resolution:        pos2:",pos2,"   closest2:",closest2
+            #     count_far_away +=1 
+
+            variant_name = fields[6]
+            if variant_name in variant_names_used_already:
+                print "Variant names are not unique.", variant_name, "appeared twice"
+                return
+            variant_names_used_already.add(variant_name)
+
+            weight_split = float(fields[11])
+
+            # Find ports and connect them with an edge
+            key1 = (chrom1,closest1,strand1)
+            key2 = (chrom2,closest2,strand2)
+
+            self.create_split_edge(key1, key2, weight_split=weight_split,split_variant_name = variant_name)
+            variant_counter += 1
+            # print "successfully created", variant_counter, "split edges"
+
+        f.close()
+
+    def connect_nodes_with_span_edges(self,breakpoints):
+
+        for chrom in breakpoints:
+            pos_list = breakpoints[chrom]
+            for pos in pos_list:
+                key1 = (chrom,pos,"+")
+                node1 = self.node_lookup.get(key1, "NA")
+                port1 = "stop"
+                if node1 == "NA":
+                    print "Edge cannot be created because no node has this start or end position as a port:"
+                    print key1
+                    raise FileFormatError("trying to create edge at position that is not a node start or end port")
+                rev_key1 = (key1[0],key1[1],reverse(key1[2]))
+                rev_node1 = self.node_lookup.get(rev_key1, "NA")
+                rev_port1 = reverse(port1)
+
+                weight_span = min([self.nodes[node1].weight, self.nodes[rev_node1].weight])
+                self.create_edge(node1,port1,rev_node1,rev_port1,weight_span,spansplit="span")
+
+
+    def create_graph(self, variants_filename, coverage_file, genome_file, snap_within_bin_resolution = 2, CN_difference_threshold_to_split=None, verbose=False):
+
+        # Find bin size from coverage_file and set resolution from it
+        bin_size = int(self.bin_size(coverage_file))
+        print "bin_size:", bin_size
+
+        resolution = bin_size*snap_within_bin_resolution
+
+        ########################### Get all breakpoints from copy number and variants #################################
+        # Record breakpoints of all CNVs 
+        breakpoints_from_copy_number = self.segmented_coverage_to_CNV_calls(coverage_file,cov_diff_threshold_to_split=CN_difference_threshold_to_split,csv=True)
+
+        # Record breakpoints of all split read variants
+        all_breakpoints_from_variants = self.breakpoints_from_variants(variants_filename,csv=True)
+
+        ########################### Snap breakpoints together #################################
+        consolidated_breakpoints = self.snap_breakpoints(breakpoints_from_copy_number, all_breakpoints_from_variants, resolution,verbose=verbose)
+        
+        ########################### Create nodes #################################
+        nodes = self.nodes_from_breakpoints(consolidated_breakpoints,genome_file,csv=True)
+        self.create_nodes_with_attributes(nodes)
+
+
+        # Connect the nodes with split read variants at the closest breakpoint
+        self.connect_nodes_at_variants(variants_filename,resolution,verbose=verbose)
+
+
+        # Create all spanning edges
+        self.connect_nodes_with_span_edges(consolidated_breakpoints)
+
+
+        if verbose:
+            print "Nodes:", len(self.nodes)
+            print "Edges:"
+            print self.count_span_vs_split_edges()
+
+    
 
 
