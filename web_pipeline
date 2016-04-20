@@ -94,6 +94,19 @@ SplitThreader.py Fusions --variants $VARIANTS --genome $GENOME --annotation $ANN
 
 
 
+OUTPUT_PREFIX=/Applications/XAMPP/htdocs/split/user_data/example1/Sniffles_on_PacBio_data
+GENE_FUSION_LIST=/Applications/XAMPP/htdocs/split/user_data/example1/Sniffles_on_PacBio_data.fusions
+ANNOTATION=/Applications/XAMPP/htdocs/split/resources/annotation/Human_hg19.genes.csv
+SplitThreader.py Fusions --variants $OUTPUT_PREFIX.variants.csv --coverage $OUTPUT_PREFIX.copynumber.segmented.csv --genome $OUTPUT_PREFIX.genome.csv --annotation $ANNOTATION --list $GENE_FUSION_LIST --out $OUTPUT_PREFIX
+
+
+
+
+
+
+
+
+
 
 
 
