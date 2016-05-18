@@ -19,6 +19,13 @@ import time
 # GENES=~/Desktop/SplitThreader_testcases/commandline/gencode.v19.annotation.gtf.genes.bed
 # SplitThreader.py Fusions --variants $VARIANTS --genome $GENOME --annotation $GENES --list $LIST --out test
 
+# OUTPUT_PREFIX=/Applications/XAMPP/htdocs/split/user_data/example1/Sniffles_on_PacBio_data
+# GENE_FUSION_LIST=/Applications/XAMPP/htdocs/split/user_data/example1/Sniffles_on_PacBio_data.fusions
+# ANNOTATION=/Applications/XAMPP/htdocs/split/resources/annotation/Human_hg19.genes.csv
+
+# SplitThreader.py Fusions --variants $OUTPUT_PREFIX.variants.csv --coverage $OUTPUT_PREFIX.copynumber.segmented.csv --genome $OUTPUT_PREFIX.genome.csv --annotation $ANNOTATION --list $GENE_FUSION_LIST --out $OUTPUT_PREFIX
+
+
 
 def initialize(args):
     variants_filename = args.variants
@@ -149,61 +156,63 @@ def evolution(args):
 #         g.read_annotation(annotation_filename,name_field=gene_name_column,by_node_access = True)
 
 
-# def score_variants(args):
+def score_variants(args):
 
-#     coverage_file = args.coverage
-#     sniffles_filename = args.variants
-#     genome_file = args.genome_file
-#     output_prefix = args.output_prefix
-#     max_variant_CNV_distance = args.max_variant_CNV_distance
+    coverage_file = args.coverage
+    variants_filename = args.variants
+    genome_file = args.genome_file
+    output_prefix = args.output_prefix
+    max_variant_CNV_distance = args.max_variant_CNV_distance
+    verbose = True
 
-#     g = initialize(args)
-
-#     ############################################################################################################################################################
-#     # Step 1:  Score split read variants independently of each other and with each breakpoint scored independently of the other
-#         # Categories:
-#         # 0: No CNV
-#         # 1: CNV present only in the opposite direction
-#         # 2: Multiple CNVs in the correct direction
-#         # 3: Exactly 1 matching CNV in the correct direction
-
-#     SRVs = g.score_SRVs(coverage_file=coverage_file,max_variant_CNV_distance=max_variant_CNV_distance)
-
-#     SRVs = g.summarize_SRVs(SRVs)
-#     print "\n_____________________________"
-#     print "SRVs by CNV evidence:"
-#     g.count_by_category(SRVs)
-
-#     g.annotate_sniffles_file_with_variant_flow_evaluations(reports = SRVs, sniffles_filename = sniffles_filename, output_filename = output_prefix + ".SRVs.csv") 
+    g = Graph()
+    g.create_graph(variants_filename=variants_filename, coverage_file=coverage_file, genome_file=genome_file, snap_within_bin_resolution=0,CN_difference_threshold_to_split=10,verbose=verbose)
 
 
-#     ############################################################################################################################################################
-#     # Step 2:  Score CNVs
-#         # Categories:
-#         # 1: Good variant evidence
-#         # Many: Messy variant evidence (multiple variants could explain it)
-#         # 0: No variant evidence
+    ############################################################################################################################################################
+    # Step 1:  Score split read variants independently of each other and with each breakpoint scored independently of the other
+        # Categories:
+        # 0: No CNV
+        # 1: CNV present only in the opposite direction
+        # 2: Multiple CNVs in the correct direction
+        # 3: Exactly 1 matching CNV in the correct direction
 
-#     CNVs_by_SRV_evidence = g.score_CNVs(coverage_file=coverage_file,max_variant_CNV_distance=max_variant_CNV_distance)
+    SRVs = g.score_SRVs(coverage_file=coverage_file,max_variant_CNV_distance=max_variant_CNV_distance)
 
-#     print "\n_____________________________"
-#     print "CNVs by SRV evidence:"
-#     g.count_by_category(CNVs_by_SRV_evidence)
+    SRVs = g.summarize_SRVs(SRVs)
+    print "\n_____________________________"
+    print "SRVs by CNV evidence:"
+    g.count_by_category(SRVs)
+
+    g.annotate_sniffles_file_with_variant_flow_evaluations(reports = SRVs, variants_filename = variants_filename, output_filename = output_prefix + ".SRV_scores.csv",csv=True) 
+
+    ############################################################################################################################################################
+    # Step 2:  Score CNVs
+        # Categories:
+        # 1: Good variant evidence
+        # Many: Messy variant evidence (multiple variants could explain it)
+        # 0: No variant evidence
+
+    # CNVs_by_SRV_evidence = g.score_CNVs(coverage_file=coverage_file,max_variant_CNV_distance=max_variant_CNV_distance)
+
+    # print "\n_____________________________"
+    # print "CNVs by SRV evidence:"
+    # g.count_by_category(CNVs_by_SRV_evidence)
 
 
-#     print "\n_____________________________"
-#     print "CNV features:"
+    # print "\n_____________________________"
+    # print "CNV features:"
 
-#     CNV_graph = Graph()
-#     CNV_features = CNV_graph.investigate_CNVs_for_quality(coverage_file=coverage_file,genome_file=genome_file,threshold_for_long_CN_segments=100000)
+    # CNV_graph = Graph()
+    # CNV_features = CNV_graph.investigate_CNVs_for_quality(coverage_file=coverage_file,genome_file=genome_file,threshold_for_long_CN_segments=100000)
 
-#     CNV_graph.count_by_category(CNV_features)
-
-
-#     g.output_CNVs_with_quality_and_SRV_concordance_analysis(coverage_file=coverage_file, CNV_features=CNV_features, CNVs_by_SRV_evidence=CNVs_by_SRV_evidence,output_filename = output_prefix + ".CNVs.tab")
+    # CNV_graph.count_by_category(CNV_features)
 
 
-#     g.filter_sniffles_file_by_CNV_presence(reports = SRVs, sniffles_filename = sniffles_filename, output_filename = output_prefix + ".filtered_SRVs.bedpe") 
+    # g.output_CNVs_with_quality_and_SRV_concordance_analysis(coverage_file=coverage_file, CNV_features=CNV_features, CNVs_by_SRV_evidence=CNVs_by_SRV_evidence,output_filename = output_prefix + ".CNVs.tab")
+
+
+    # g.filter_sniffles_file_by_CNV_presence(reports = SRVs, sniffles_filename = sniffles_filename, output_filename = output_prefix + ".filtered_SRVs.bedpe") 
 
 
 # def flow_around_gene(args):
@@ -310,7 +319,7 @@ def main():
     # parser_check = subparsers.add_parser('check', help='Run sanity checks on graph (DO THIS FIRST)')
     parser_fusions = subparsers.add_parser('Fusions', help='Find gene fusions')
     parser_evolution = subparsers.add_parser('Evolution', help='Reconstruct history of a region by finding the most parsimonious set of paths through the graph')
-    # parser_score_variants = subparsers.add_parser('Score', help='Analyze variants for concordance with copy numbers')
+    parser_score_variants = subparsers.add_parser('Score', help='Analyze variants for concordance with copy numbers')
     # parser_flow = subparsers.add_parser('Flow', help='Analyze and balance flow across the graph')
     # parser_flow_around_gene = subparsers.add_parser('FlowGene', help='Show the flow surrounding a particular gene')
 
@@ -345,13 +354,12 @@ def main():
     # parser_evolution.add_argument("--depth",help="Number of edges deep to search in the graph. Influences runtime. Default = 30",type=int,dest="depth_limit",default=30)
     
 
-    # parser_score_variants.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants",required=True)
-    # parser_score_variants.add_argument("--genome",help="genome file where column 1 is chromosome and column 2 is the length of that chromosome",dest="genome_file",required=True)
-    # parser_score_variants.add_argument("--coverage",help="coverage bed file with columns: chr\tstart\tend\tunsegmented_coverage\tsegmented_coverage. MUST BE SORTED BY CHROMOSOME THEN BY START POSITION, sort -k1,1 -k2,2n will do this",dest="coverage",required=True)
-    # parser_score_variants.add_argument("--dist",help="max variant-CNV distance",dest="max_variant_CNV_distance",type=int,required=True)
-    # parser_score_variants.add_argument("--out",help="prefix for all output files",dest="output_prefix",required=True)
-    
-    # parser_score_variants.set_defaults(func=score_variants)
+    parser_score_variants.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants",required=True)
+    parser_score_variants.add_argument("--genome",help="genome file where column 1 is chromosome and column 2 is the length of that chromosome",dest="genome_file",required=True)
+    parser_score_variants.add_argument("--coverage",help="coverage bed file with columns: chr\tstart\tend\tunsegmented_coverage\tsegmented_coverage. MUST BE SORTED BY CHROMOSOME THEN BY START POSITION, sort -k1,1 -k2,2n will do this",dest="coverage",required=True)
+    parser_score_variants.add_argument("--dist",help="max variant-CNV distance",dest="max_variant_CNV_distance",type=int,required=True)
+    parser_score_variants.add_argument("--out",help="prefix for all output files",dest="output_prefix",required=True)
+    parser_score_variants.set_defaults(func=score_variants)
 
 
     # parser_flow.add_argument("--variants",help="bedpe file from running spansplit.py",dest="variants",required=True)

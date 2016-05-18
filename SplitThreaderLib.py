@@ -1119,9 +1119,9 @@ class Graph(object):
         path_counter = 1
         f=open(output_filename,"w")
         if header == True:
-            f.write("chromosome\tstart\tend\tname\tstrand\n")
+            f.write("chromosome\tstart\tend\tname\tscore\tstrand\n")
         else:
-            print "Header for bed file:\nchromosome\tstart\tend\tname\tstrand\n"
+            print "Header for bed file:\nchromosome\tstart\tend\tname\tscore\tstrand\n"
         for i in xrange(len(paths)):
             path = paths[i]
             total_length = self.find_total_length(path)
@@ -1158,9 +1158,9 @@ class Graph(object):
                         else:
                             # Print results of the last segment
                             if names == None:
-                                f.write("%s\t%d\t%d\tpath_%03d\t%s\n" % (current_chrom,current_start, current_stop,path_counter, current_strand))
+                                f.write("%s\t%d\t%d\tpath_%03d\t0\t%s\n" % (current_chrom,current_start, current_stop,path_counter, current_strand))
                             else:
-                                f.write("%s\t%d\t%d\t%s\t%s\n" % (current_chrom,current_start, current_stop, names[i], current_strand))
+                                f.write("%s\t%d\t%d\t%s\t0\t%s\n" % (current_chrom,current_start, current_stop, names[i], current_strand))
 
                             # Reset by starting this segment
                             current_chrom = node.attributes["chrom"]
@@ -1171,15 +1171,15 @@ class Graph(object):
                 else:
                     # No collapsing, just print everything
                     if names == None:
-                        f.write("%s\t%d\t%d\tpath_%03d\t%s\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],path_counter, strand))
+                        f.write("%s\t%d\t%d\tpath_%03d\t0\t%s\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],path_counter, strand))
                     else:
-                        f.write("%s\t%d\t%d\t%s\t%s\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],names[i], strand))
+                        f.write("%s\t%d\t%d\t%s\t0\t%s\n" % (node.attributes["chrom"],node.attributes["start"], node.attributes["stop"],names[i], strand))
             if collapse == True:
                 # Print results of the last segment
                 if names == None:
-                    f.write("%s\t%d\t%d\tpath_%03d\t%s\n" % (current_chrom,current_start, current_stop,path_counter, current_strand))
+                    f.write("%s\t%d\t%d\tpath_%03d\t0\t%s\n" % (current_chrom,current_start, current_stop,path_counter, current_strand))
                 else:
-                    f.write("%s\t%d\t%d\t%s\t%s\n" % (current_chrom,current_start, current_stop, names[i], current_strand))
+                    f.write("%s\t%d\t%d\t%s\t0\t%s\n" % (current_chrom,current_start, current_stop, names[i], current_strand))
 
             path_counter += 1
         f.close()
@@ -1579,14 +1579,18 @@ class Graph(object):
 
 
 
-    def annotate_sniffles_file_with_variant_flow_evaluations(self,reports, sniffles_filename, output_filename):
+    def annotate_sniffles_file_with_variant_flow_evaluations(self,reports, variants_filename, output_filename,csv=False):
 
-        f = open(sniffles_filename)
+        f = open(variants_filename)
         fout = open(output_filename, 'w')
 
-        fout.write("chrom1,pos1,stop1,chrom2,pos2,stop2,variant_name,score,strand1,strand2,type,split,span1,span2,flow_category,description\n")
+        fout.write("chrom1,pos1,stop1,chrom2,pos2,stop2,variant_name,score,strand1,strand2,type,split,flow_category,description\n")
         for line in f:
             fields = line.strip().split()
+            if csv:
+                fields = line.strip().split(",")
+            if not fields[1].isdigit(): # Skip header
+                continue
             variant_name = fields[6]
             fout.write(",".join(fields) + "," + reports.get(variant_name, "VARIANT_NOT_IN_GRAPH") + "\n" )
         f.close()
@@ -1611,7 +1615,7 @@ class Graph(object):
         f.close()
         fout.close()
 
-    def segmented_coverage_to_CNV_calls_with_diff(self,coverage_file,cov_diff_threshold_to_split=0):
+    def segmented_coverage_to_CNV_calls_with_diff(self,coverage_file,cov_diff_threshold_to_split=0,csv=False):
         # MUST BE SORTED BY CHROMOSOME THEN BY START POSITION
 
         # sample:
@@ -1628,6 +1632,9 @@ class Graph(object):
 
         for line in f:
             fields = line.strip().split()
+            if csv:
+                fields = line.strip().split(",")
+
             chrom = fields[0]
             if not fields[1].isdigit(): # Header 
                 # print line.strip()
@@ -1838,7 +1845,7 @@ class Graph(object):
 
     def score_SRVs(self,coverage_file, max_variant_CNV_distance):
 
-        breakpoints_from_copy_number = self.segmented_coverage_to_CNV_calls_with_diff(coverage_file,cov_diff_threshold_to_split=0)
+        breakpoints_from_copy_number = self.segmented_coverage_to_CNV_calls_with_diff(coverage_file,cov_diff_threshold_to_split=0,csv=True)
 
         SRV_score_breakpoint_1 = {}
         SRV_score_breakpoint_2 = {}
@@ -1921,11 +1928,11 @@ class Graph(object):
             if s1 == 3 and s2 == 3:
                 summary[variant_name] = "Perfect,exactly 1 CNV on each side"
             elif s1 >= 2 and s2 >= 2:
-                summary[variant_name] = "Great,1 or more explanatory CNVs"
+                summary[variant_name] = "Perfect,1 or more explanatory CNVs"
             elif s1 < 2 and s2 < 2:
                 summary[variant_name] = "Bad,CNVs missing or in wrong direction"
             else:
-                summary[variant_name] = "Poor,explanatory CNVs only on one side"
+                summary[variant_name] = "One-sided,explanatory CNV only on one side"
 
         return summary
 
@@ -2659,7 +2666,7 @@ class Graph(object):
 
         return breakpoints_by_chromosome
 
-    def breakpoints_from_variants(self,variants_filename,csv=False):
+    def breakpoints_from_variants(self,variants_filename,csv=True):
         # Read file once to note all the breakpoints
         breakpoints_by_chromosome = {}
         f = open(variants_filename)
