@@ -1,9 +1,9 @@
-#SplitThreader
+# This is a very old version of SplitThreader that was initially coded in Python
 
-Make a graph out of your highly rearranged genome and use it to evaluate copy-number concordance of your variant calls, check for evidence of complex gene fusions, and reconstruct the history of variants in a region (such as why an oncogene has become amplified). 
+I made this repo public only as a fun historical artifact. Please see [splitthreader.com](splitthreader.com) and the [actual SplitThreader repo](https://github.com/MariaNattestad/SplitThreader) for the version of SplitThreader you would ever want to use.
 
 
-##Quick reference guide:
+## Old README usage information.
 ```bash
 Example:
 
@@ -59,3 +59,4 @@ awk 'BEGIN{num=10000;sum=0;possum=0}{if(NR!=1){if(possum==10000 || chrom!=$1){pr
 awk 'BEGIN{start=0;print "chromosome,start,end,unsegmented_coverage"}{if(chrom!=$1){start=0}; print $1,start,$2,$3;start=$2;chrom=$
 
 ####################################################################################################################
+```
