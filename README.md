@@ -1,6 +1,6 @@
 # This is a very old version of SplitThreader that was initially coded in Python
 
-I made this repo public only as a fun historical artifact. Please see [splitthreader.com](splitthreader.com) and the [actual SplitThreader repo](https://github.com/MariaNattestad/SplitThreader) for the version of SplitThreader you would ever want to use.
+I made this repo public only as a fun historical artifact. Please see [splitthreader.com](http://splitthreader.com) and the [actual SplitThreader repo](https://github.com/MariaNattestad/SplitThreader) for the version of SplitThreader you would ever want to use.
 
 
 ## Old README usage information.
